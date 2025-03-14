@@ -3,6 +3,9 @@ from tkinter import messagebox, ttk
 from customtkinter import CTkFrame, CTkLabel, CTkButton, CTkEntry, CTkToplevel, CTkRadioButton
 import webbrowser
 import os
+import subprocess
+import pyperclip
+import requests
 
 class GUIManager:
     def __init__(self, root, cache_manager, watchlist_manager, api_client):
@@ -10,6 +13,7 @@ class GUIManager:
         self.cache_manager = cache_manager
         self.watchlist_manager = watchlist_manager
         self.api_client = api_client
+        self.sort_column, self.sort_reverse = self.cache_manager.get_sort_type()
         self.setup_gui()
 
     def setup_gui(self):
@@ -29,13 +33,14 @@ class GUIManager:
         columns = ("Show", "Episode", "Title", "Air Date")
         self.upcoming_tree = ttk.Treeview(main_frame, columns=columns, show="headings")
         for col in columns:
-            self.upcoming_tree.heading(col, text=col)
+            self.upcoming_tree.heading(col, text=col, command=lambda _col=col: self.sort_upcoming_tree(_col))
             self.upcoming_tree.column(col, width=120 if col != "Title" else 200)
         self.upcoming_tree.pack(fill=tk.BOTH, expand=True)
 
         # Apply dark theme styles to the treeview
         style = ttk.Style()
         style.theme_use("clam")
+
         style.configure("Treeview", background="black", foreground="white", fieldbackground="black")
         style.map('Treeview', background=[('selected', 'grey')], foreground=[('selected', 'white')])
 
@@ -55,6 +60,9 @@ class GUIManager:
         open_imdb_button = CTkButton(control_frame, text="Open IMDb Page", command=lambda: self.open_imdb())
         open_imdb_button.grid(row=0, column=3, padx=5)
 
+        open_qbittorrent_button = CTkButton(control_frame, text="Send to qBittorrent", command=lambda: self.open_qbittorrent_with_magnet())
+        open_qbittorrent_button.grid(row=0, column=4, padx=5)
+
         search_label = CTkLabel(control_frame, text="Search on:", text_color="white")
         search_label.grid(row=1, column=0, padx=5, pady=5)
 
@@ -69,6 +77,10 @@ class GUIManager:
 
         # Load initial data
         self.refresh_upcoming()
+
+        # Apply initial sort if available
+        if self.sort_column:
+            self.sort_upcoming_tree(self.sort_column, initial=True)
 
     def handle_error(self, error_message):
         """Display an error message to the user."""
@@ -112,6 +124,85 @@ class GUIManager:
             webbrowser.open(url)
         else:
             self.handle_error(f"IMDb page not available for {show}.")
+    
+    def prompt_qbittorrent_credentials(self):
+        """Prompt the user for qBittorrent username and password."""
+        credentials_win = CTkToplevel(self.root)
+        credentials_win.title("qBittorrent Credentials")
+        credentials_win.geometry("300x200")
+        credentials_win.configure(fg_color="black")
+
+        # Ensure the new window is in the foreground
+        credentials_win.lift()
+        credentials_win.focus_force()
+        credentials_win.transient(self.root)
+
+        # Username label and entry
+        self.configure_ctk_label(credentials_win, "Username:")
+        username_entry = CTkEntry(credentials_win, width=40, fg_color="black", text_color="white")
+        username_entry.pack(pady=(0, 5), padx=10, fill=tk.X)
+
+        # Password label and entry
+        self.configure_ctk_label(credentials_win, "Password:")
+        password_entry = CTkEntry(credentials_win, width=40, fg_color="black", text_color="white", show="*")
+        password_entry.pack(pady=(0, 5), padx=10, fill=tk.X)
+
+        # Button to submit credentials
+        def submit_credentials():
+            username = username_entry.get().strip()
+            password = password_entry.get().strip()
+            if username and password:
+                self.cache_manager.save_credentials(username, password)
+                credentials_win.destroy()
+                self.open_qbittorrent_with_magnet()
+            else:
+                self.handle_error("Please enter both username and password.")
+
+        submit_button = CTkButton(credentials_win, text="Submit", command=submit_credentials, text_color="white")
+        submit_button.pack(pady=10)
+
+    def open_qbittorrent_with_magnet(self):
+        """Send the magnet URL from the clipboard to the qBittorrent web interface with authentication."""
+        try:
+            magnet_url = pyperclip.paste()
+            if not magnet_url.startswith("magnet:"):
+                self.handle_error("Clipboard does not contain a valid magnet URL.")
+                return
+            
+            # Retrieve authentication details from cache
+            username, password = self.cache_manager.load_credentials()
+            if not username or not password:
+                self.prompt_qbittorrent_credentials()
+                return
+            
+            # Authentication details
+            qbittorrent_url = "http://192.168.1.113:8080/api/v2/torrents/add"
+            
+            # Login to qBittorrent
+            login_url = "http://192.168.1.113:8080/api/v2/auth/login"
+            login_data = {"username": username, "password": password}
+            session = requests.Session()
+            login_response = session.post(login_url, data=login_data)
+            
+            if login_response.status_code != 200:
+                self.handle_error(f"Failed to login to qBittorrent: {login_response.text}")
+                return
+            
+            # Send the magnet URL to the qBittorrent web interface
+            response = session.post(qbittorrent_url, data={"urls": magnet_url})
+            
+            if response.status_code != 200:
+                self.handle_error(f"Failed to add torrent: {response.text}")
+        except Exception as e:
+            self.handle_error(f"Failed to open qBittorrent: {e}")
+
+    def open_qbittorrent_web(self):
+        """Open the qBittorrent web interface."""
+        try:
+            url = "http://192.168.1.113:8080/"
+            webbrowser.open(url)
+        except Exception as e:
+            self.handle_error(f"Failed to open qBittorrent web interface: {e}")
 
     def search_and_open_url(self, show_name, episode=None, base_url="https://ext.to/browse/?q="):
         """Search and open URL for the show and previous episode if provided."""
@@ -173,7 +264,7 @@ class GUIManager:
         rb_frame = CTkFrame(add_win, fg_color="black")
         rb_frame.pack(pady=5, fill=tk.X, padx=10)
         self.configure_ctk_label(rb_frame, "Select method:", pady=0)
-        self.configure_radiobutton(rb_frame, "Show Name", method_var, "name", lambda: autocomplete_listbox.pack_forget())
+        self.configure_radiobutton(rb_frame, "Name", method_var, "name", lambda: autocomplete_listbox.pack_forget())
         self.configure_radiobutton(rb_frame, "IMDb ID", method_var, "imdb", lambda: autocomplete_listbox.pack_forget())
 
         # Input label and entry.
@@ -200,7 +291,7 @@ class GUIManager:
             if not user_input:
                 result_label.configure(text="Enter a show name or IMDb ID first.")
                 return
-            if method_var.get() == "name":
+            if (method_var.get() == "name"):
                 info = self.api_client.get_next_episode(user_input)
                 imdb_id = info.get("imdb")
                 cache_file = self.cache_manager.get_cache_file_path(user_input)  # Get the cache file path
@@ -318,3 +409,13 @@ class GUIManager:
     def close_autocomplete(self, event, autocomplete_listbox):
         """Close the autocomplete listbox when clicking anywhere in the add show window."""
         autocomplete_listbox.place_forget()
+
+    def sort_upcoming_tree(self, col, initial=False):
+        """Sort the upcoming_tree by the given column."""
+        data = [(self.upcoming_tree.set(child, col), child) for child in self.upcoming_tree.get_children('')]
+        data.sort(reverse=self.sort_reverse)
+        for index, (val, child) in enumerate(data):
+            self.upcoming_tree.move(child, '', index)
+        if not initial:
+            self.sort_reverse = not self.sort_reverse
+            self.cache_manager.set_sort_type(col, self.sort_reverse)

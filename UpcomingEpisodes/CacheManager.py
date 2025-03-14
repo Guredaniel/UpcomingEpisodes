@@ -2,6 +2,7 @@ import os
 import re
 import json
 import time
+from cryptography.fernet import Fernet
 
 # ---------------------------
 # Constants
@@ -11,11 +12,24 @@ CACHE_TIMEOUT = 86400  # seconds, e.g. 1 hour
 class CacheManager:
     def __init__(self):
         self.cache_timeout = CACHE_TIMEOUT
+        self.key = self.load_or_generate_key()
+
+    def load_or_generate_key(self):
+        """Load or generate an encryption key."""
+        key_path = os.path.join(self.get_cache_directory(), "key.key")
+        if os.path.exists(key_path):
+            with open(key_path, "rb") as key_file:
+                return key_file.read()
+        else:
+            key = Fernet.generate_key()
+            with open(key_path, "wb") as key_file:
+                key_file.write(key)
+            return key
 
     def get_cache_directory(self):
         """Ensure a cache directory exists inside your %LOCALAPPDATA% folder."""
-        appdata = os.environ.get("LOCALAPPDATA", ".")
-        cache_dir = os.path.join(appdata, "UpcomingReleasesCache")
+        appdata = os.path.expanduser("~\\AppData\\Local")
+        cache_dir = os.path.join(appdata, "UpcomingEpisodes")
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir)
         return cache_dir
@@ -52,3 +66,50 @@ class CacheManager:
         cache_file = self.get_cache_file_path(show_name)
         if os.path.exists(cache_file):
             os.remove(cache_file)
+
+    def get_sort_type(self):
+        """Get the cached sort type if it exists."""
+        cache_dir = self.get_cache_directory()
+        sort_file = os.path.join(cache_dir, "sort_type.json")
+        try:
+            with open(sort_file, "r") as f:
+                data = json.load(f)
+            return data.get("sort_column"), data.get("sort_reverse")
+        except Exception:
+            return None, False
+
+    def set_sort_type(self, sort_column, sort_reverse):
+        """Cache the sort type."""
+        cache_dir = self.get_cache_directory()
+        sort_file = os.path.join(cache_dir, "sort_type.json")
+        data = {"sort_column": sort_column, "sort_reverse": sort_reverse}
+        try:
+            with open(sort_file, "w") as f:
+                json.dump(data, f)
+        except Exception as e:
+            print("Error saving sort type:", e)
+
+    def save_credentials(self, username, password):
+        """Save encrypted qBittorrent credentials."""
+        cipher_suite = Fernet(self.key)
+        encrypted_username = cipher_suite.encrypt(username.encode())
+        encrypted_password = cipher_suite.encrypt(password.encode())
+        credentials = {
+            "username": encrypted_username.decode(),
+            "password": encrypted_password.decode()
+        }
+        credentials_path = os.path.join(self.get_cache_directory(), "qbittorrent_credentials.json")
+        with open(credentials_path, "w") as f:
+            json.dump(credentials, f)
+
+    def load_credentials(self):
+        """Load and decrypt qBittorrent credentials."""
+        credentials_path = os.path.join(self.get_cache_directory(), "qbittorrent_credentials.json")
+        if not os.path.exists(credentials_path):
+            return None, None
+        with open(credentials_path, "r") as f:
+            credentials = json.load(f)
+        cipher_suite = Fernet(self.key)
+        username = cipher_suite.decrypt(credentials["username"].encode()).decode()
+        password = cipher_suite.decrypt(credentials["password"].encode()).decode()
+        return username, password
