@@ -113,3 +113,23 @@ class CacheManager:
         username = cipher_suite.decrypt(credentials["username"].encode()).decode()
         password = cipher_suite.decrypt(credentials["password"].encode()).decode()
         return username, password
+
+    def save_setting(self, key, value):
+        """Save a setting to the cache."""
+        settings_path = os.path.join(self.get_cache_directory(), "settings.json")
+        settings = {}
+        if os.path.exists(settings_path):
+            with open(settings_path, "r") as f:
+                settings = json.load(f)
+        settings[key] = value
+        with open(settings_path, "w") as f:
+            json.dump(settings, f)
+
+    def load_setting(self, key, default=None):
+        """Load a setting from the cache."""
+        settings_path = os.path.join(self.get_cache_directory(), "settings.json")
+        if not os.path.exists(settings_path):
+            return default
+        with open(settings_path, "r") as f:
+            settings = json.load(f)
+        return settings.get(key, default)

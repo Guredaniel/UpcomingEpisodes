@@ -20,7 +20,7 @@ class WatchlistManager:
                 return self.remove_duplicates(watchlist)
         except Exception:
             # Default watchlist if the file does not exist.
-            return self.remove_duplicates(["Stranger Things", "The Witcher", "Game of Thrones"])
+            return self.remove_duplicates(["Squid Game"])
 
     def save_watchlist(self):
         """Save the current watchlist to the file."""

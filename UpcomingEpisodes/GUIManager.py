@@ -1,11 +1,11 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
-from customtkinter import CTkFrame, CTkLabel, CTkButton, CTkEntry, CTkToplevel, CTkRadioButton
+from customtkinter import CTkFrame, CTkLabel, CTkButton, CTkEntry, CTkToplevel, CTkRadioButton, CTkCheckBox
 import webbrowser
 import os
-import subprocess
 import pyperclip
-import requests
+from tkinter import PhotoImage  # Add this import for the gear icon
+from tkinter import StringVar  # Add this import
 
 class GUIManager:
     def __init__(self, root, cache_manager, watchlist_manager, api_client):
@@ -14,6 +14,10 @@ class GUIManager:
         self.watchlist_manager = watchlist_manager
         self.api_client = api_client
         self.sort_column, self.sort_reverse = self.cache_manager.get_sort_type()
+        self.monitor_clipboard_enabled = self.cache_manager.load_setting("monitor_clipboard_enabled", True)  # Load setting from cache
+        self.qbittorrent_url = self.cache_manager.load_setting("qbittorrent_url", "http://192.168.1.113:8080/")  # Load setting from cache
+        self.video_quality = self.cache_manager.load_setting("video_quality", "1080p")  # Load setting from cache
+        self.quality_setting_enabled = self.cache_manager.load_setting("quality_setting_enabled", True)  # Load setting from cache
         self.setup_gui()
 
     def setup_gui(self):
@@ -75,6 +79,13 @@ class GUIManager:
         search_nyaa_button = CTkButton(control_frame, text="Nyaa", command=lambda: self.search_selected("nyaa"))
         search_nyaa_button.grid(row=1, column=3, padx=5)
 
+        # Add settings button with gear icon
+        settings_icon = PhotoImage(file=r"C:\Users\gured\Downloads\211751_gear_icon.png")  # Use raw string for the file path
+        settings_icon = settings_icon.subsample(2, 2)  # Make the icon smaller
+        settings_button = tk.Button(self.root, image=settings_icon, command=self.open_settings_window, bg="gray")  # Change background color
+        settings_button.image = settings_icon  # Keep a reference to avoid garbage collection
+        settings_button.place(relx=1.0, rely=0.0, anchor="ne", x=-10, y=10)  # Position the button at the top right
+
         # Load initial data
         self.refresh_upcoming()
 
@@ -82,8 +93,15 @@ class GUIManager:
         if self.sort_column:
             self.sort_upcoming_tree(self.sort_column, initial=True)
 
+        # Initialize last_magnet_url
+        self.last_magnet_url = ""
+
+        # Start monitoring the clipboard
+        self.monitor_clipboard()
+
     def handle_error(self, error_message):
-        """Display an error message to the user."""
+        """Display an error message to the user and copy it to the clipboard."""
+        pyperclip.copy(error_message)
         messagebox.showerror("Error", error_message)
 
     def refresh_upcoming(self):
@@ -168,39 +186,14 @@ class GUIManager:
             if not magnet_url.startswith("magnet:"):
                 self.handle_error("Clipboard does not contain a valid magnet URL.")
                 return
-            
-            # Retrieve authentication details from cache
-            username, password = self.cache_manager.load_credentials()
-            if not username or not password:
-                self.prompt_qbittorrent_credentials()
-                return
-            
-            # Authentication details
-            qbittorrent_url = "http://192.168.1.113:8080/api/v2/torrents/add"
-            
-            # Login to qBittorrent
-            login_url = "http://192.168.1.113:8080/api/v2/auth/login"
-            login_data = {"username": username, "password": password}
-            session = requests.Session()
-            login_response = session.post(login_url, data=login_data)
-            
-            if login_response.status_code != 200:
-                self.handle_error(f"Failed to login to qBittorrent: {login_response.text}")
-                return
-            
-            # Send the magnet URL to the qBittorrent web interface
-            response = session.post(qbittorrent_url, data={"urls": magnet_url})
-            
-            if response.status_code != 200:
-                self.handle_error(f"Failed to add torrent: {response.text}")
+            self.api_client.open_qbittorrent_with_magnet(magnet_url)
         except Exception as e:
             self.handle_error(f"Failed to open qBittorrent: {e}")
 
     def open_qbittorrent_web(self):
         """Open the qBittorrent web interface."""
         try:
-            url = "http://192.168.1.113:8080/"
-            webbrowser.open(url)
+            self.api_client.open_qbittorrent_web()
         except Exception as e:
             self.handle_error(f"Failed to open qBittorrent web interface: {e}")
 
@@ -219,6 +212,9 @@ class GUIManager:
                 query = show_name
         else:
             query = show_name
+        
+        if self.quality_setting_enabled:
+            query += f" {self.video_quality}"
         
         formatted_query = query.replace(" ", "+")
         url = f"{base_url}{formatted_query}"
@@ -242,6 +238,25 @@ class GUIManager:
         except IndexError:
             self.handle_error("Please select a show to search.")
 
+    def search_and_send_to_qbittorrent(self, site):
+        """Search for the selected show and send the magnet link to qBittorrent."""
+        try:
+            selected_item = self.upcoming_tree.selection()[0]
+            values = self.upcoming_tree.item(selected_item)["values"]
+            show_name = values[0]
+            episode = values[1]
+            magnet_link = self.api_client.search_torrent(show_name, episode, site)
+            if magnet_link:
+                pyperclip.copy(magnet_link)
+                self.api_client.open_qbittorrent_with_magnet(magnet_link)
+                messagebox.showinfo("Success", "Magnet link copied and sent to qBittorrent.")
+            else:
+                self.handle_error("Failed to find a magnet link.")
+        except IndexError:
+            self.handle_error("Please select a show to search.")
+        except Exception as e:
+            self.handle_error(f"An error occurred: {e}")
+
     def open_add_show_window(self):
         """
         Open a larger window to add a new show. You can choose between:
@@ -251,7 +266,7 @@ class GUIManager:
         """
         add_win = CTkToplevel(self.root)
         add_win.title("Add Show")
-        add_win.geometry("500x360")
+        add_win.geometry("550x360")
         add_win.configure(fg_color="black")  # Set background color to black
 
         # Ensure the new window is in the foreground
@@ -419,3 +434,81 @@ class GUIManager:
         if not initial:
             self.sort_reverse = not self.sort_reverse
             self.cache_manager.set_sort_type(col, self.sort_reverse)
+
+    def open_settings_window(self):
+        """Open the settings window."""
+        settings_win = CTkToplevel(self.root)
+        settings_win.title("Settings")
+        settings_win.geometry("350x400")  # Adjusted height to accommodate new setting
+        settings_win.configure(fg_color="black")
+
+        # Ensure the new window is in the foreground
+        settings_win.lift()
+        settings_win.focus_force()
+        settings_win.transient(self.root)
+
+        # Create a frame for better organization
+        settings_frame = CTkFrame(settings_win, fg_color="black")
+        settings_frame.pack(pady=10, padx=10, fill=tk.BOTH, expand=True)
+
+        # Clipboard monitoring toggle
+        clipboard_monitor_var = tk.BooleanVar(value=self.monitor_clipboard_enabled)
+        clipboard_monitor_check = CTkCheckBox(settings_frame, text="Enable Clipboard Monitoring", variable=clipboard_monitor_var, command=lambda: self.toggle_clipboard_monitoring(clipboard_monitor_var.get()), text_color="white")
+        clipboard_monitor_check.pack(pady=10, anchor="w")
+
+        # qBittorrent URL entry
+        self.configure_ctk_label(settings_frame, "qBittorrent URL:", pady=(10, 0))
+        qbittorrent_url_entry = CTkEntry(settings_frame, width=40, fg_color="black", text_color="white")
+        qbittorrent_url_entry.insert(0, self.qbittorrent_url)
+        qbittorrent_url_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
+
+        # Quality setting toggle
+        quality_setting_var = tk.BooleanVar(value=self.quality_setting_enabled)
+        quality_setting_check = CTkCheckBox(settings_frame, text="Enable Quality Setting", variable=quality_setting_var, text_color="white")
+        quality_setting_check.pack(pady=10, anchor="w")
+
+        # Video quality selection
+        self.configure_ctk_label(settings_frame, "Select Video Quality:", pady=(10, 0))
+        quality_var = StringVar(value=self.video_quality)
+        quality_options = ["480p", "720p", "1080p", "2160p"]
+        quality_menu = ttk.OptionMenu(settings_frame, quality_var, self.video_quality, *quality_options)
+        quality_menu.pack(pady=(0, 10), padx=10, fill=tk.X)
+
+        # Button to save settings
+        def save_settings():
+            self.qbittorrent_url = qbittorrent_url_entry.get().strip()
+            self.cache_manager.save_setting("qbittorrent_url", self.qbittorrent_url)
+            self.quality_setting_enabled = quality_setting_var.get()
+            self.cache_manager.save_setting("quality_setting_enabled", self.quality_setting_enabled)
+            self.video_quality = quality_var.get()
+            self.cache_manager.save_setting("video_quality", self.video_quality)
+            settings_win.destroy()
+
+        save_button = CTkButton(settings_frame, text="Save", command=save_settings, text_color="white")
+        save_button.pack(pady=20)
+
+        # Add other settings options here as needed
+
+    def toggle_clipboard_monitoring(self, enabled):
+        """Toggle clipboard monitoring on or off."""
+        self.monitor_clipboard_enabled = enabled
+        self.cache_manager.save_setting("monitor_clipboard_enabled", enabled)  # Save setting to cache
+        if enabled:
+            self.monitor_clipboard()
+        else:
+            self.root.after_cancel(self.clipboard_monitor_id)
+
+    def monitor_clipboard(self):
+        """Monitor the clipboard for magnet URLs and prompt the user to send them to qBittorrent."""
+        if not self.monitor_clipboard_enabled:
+            return
+        try:
+            clipboard_content = pyperclip.paste()
+            if (clipboard_content.startswith("magnet:") and clipboard_content != self.last_magnet_url):
+                self.last_magnet_url = clipboard_content
+                if messagebox.askyesno("Magnet URL Detected", "A magnet URL was detected in the clipboard. Do you want to send it to qBittorrent?"):
+                    self.open_qbittorrent_with_magnet()
+        except Exception as e:
+            self.handle_error(f"Failed to monitor clipboard: {e}")
+        finally:
+            self.clipboard_monitor_id = self.root.after(1000, self.monitor_clipboard)  # Check the clipboard every second
