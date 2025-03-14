@@ -1,11 +1,18 @@
 import requests
 from CacheManager import CacheManager
+from bs4 import BeautifulSoup
 
 # ---------------------------
 # Constants
 # ---------------------------
 TVMAZE_SINGLESEARCH_URL = "http://api.tvmaze.com/singlesearch/shows?q="
 TVMAZE_LOOKUP_URL = "http://api.tvmaze.com/lookup/shows?imdb="
+TVMAZE_SEARCH_URL = "http://api.tvmaze.com/search/shows?q="
+TMDB_POPULAR_TV_URL = "https://www.themoviedb.org/tv"
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9',
+}
 
 class APIClient:
     def __init__(self, cache_manager):
@@ -91,3 +98,39 @@ class APIClient:
                 return None
         except Exception:
             return None
+
+    def search_shows(self, query):
+        """
+        Search for shows using the TVmaze API.
+        Returns the JSON data if found, otherwise returns None.
+        """
+        try:
+            url = f"{TVMAZE_SEARCH_URL}{query}"
+            response = requests.get(url)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return None
+        except Exception:
+            return None
+
+    def fetch_latest_shows(self):
+        """
+        Fetch the latest popular shows from TMDB.
+        Returns a list of show titles if found, otherwise returns an error message.
+        """
+        try:
+            response = requests.get(TMDB_POPULAR_TV_URL, headers=HEADERS)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Find the TV show cards on the page
+            show_cards = soup.find_all('div', class_='card style_1')[:12]  # Limit to top 10
+            
+            # Extract the show titles
+            popular_shows = [card.find('h2').text.strip() for card in show_cards]
+            return popular_shows
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to fetch data: {e}")
+            return ["Error fetching data"]

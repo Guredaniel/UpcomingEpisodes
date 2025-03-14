@@ -1,22 +1,8 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
-from customtkinter import CTk, CTkFrame, CTkLabel, CTkButton, CTkEntry, CTkToplevel
+from customtkinter import CTkFrame, CTkLabel, CTkButton, CTkEntry, CTkToplevel, CTkRadioButton
 import webbrowser
-import requests
-from bs4 import BeautifulSoup
-from CacheManager import CacheManager
-from WatchlistManager import WatchlistManager
-from APIClient import APIClient
-
-# ---------------------------
-# Constants
-# ---------------------------
-TVMAZE_SEARCH_URL = "http://api.tvmaze.com/search/shows?q="
-TMDB_POPULAR_TV_URL = "https://www.themoviedb.org/tv"
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Accept-Language': 'en-US,en;q=0.9',
-}
+import os
 
 class GUIManager:
     def __init__(self, root, cache_manager, watchlist_manager, api_client):
@@ -174,8 +160,8 @@ class GUIManager:
         """
         add_win = CTkToplevel(self.root)
         add_win.title("Add Show")
-        add_win.geometry("500x520")
-        add_win.configure(fg_color="black")
+        add_win.geometry("500x360")
+        add_win.configure(fg_color="black")  # Set background color to black
 
         # Ensure the new window is in the foreground
         add_win.lift()
@@ -197,7 +183,7 @@ class GUIManager:
         entry.focus_set()  # Set focus to the entry widget
 
         # Listbox for auto-complete suggestions (initially hidden).
-        autocomplete_listbox = tk.Listbox(add_win, height=10, bg="black", fg="white")
+        autocomplete_listbox = tk.Listbox(add_win, fg="white", bg="black", height=10, width=50)
 
         result_label = CTkLabel(add_win, text="", fg_color="black", text_color="red")
         result_label.pack(pady=0)
@@ -205,23 +191,8 @@ class GUIManager:
         entry.bind("<KeyRelease>", lambda event: self.update_autocomplete(event, entry, method_var, autocomplete_listbox))
         autocomplete_listbox.bind("<<ListboxSelect>>", lambda event: self.on_listbox_select(event, entry, autocomplete_listbox))
 
-        def fetch_latest_shows():
-            try:
-                # Send a GET request to fetch the HTML content
-                response = requests.get(TMDB_POPULAR_TV_URL, headers=HEADERS)
-                response.raise_for_status()
-                
-                soup = BeautifulSoup(response.text, 'html.parser')
-                
-                # Find the TV show cards on the page
-                show_cards = soup.find_all('div', class_='card style_1')[:12]  # Limit to top 10
-                
-                # Extract the show titles
-                popular_shows = [card.find('h2').text.strip() for card in show_cards]
-                return popular_shows
-            except requests.exceptions.RequestException as e:
-                print(f"Failed to fetch data: {e}")
-                return ["Error fetching data"]
+        # Bind click event to close autocomplete listbox
+        add_win.bind("<Button-1>", lambda event: self.close_autocomplete(event, autocomplete_listbox))
 
         # --- Button to Open IMDb Page in the Add Show Window ---
         def open_imdb_from_add():
@@ -280,20 +251,17 @@ class GUIManager:
         self.configure_ctk_button(button_frame, "Open IMDb Page", open_imdb_from_add, 0, 1)
         
         # Popular shows section (3 buttons per row)
-        self.configure_ctk_label(add_win, "Latest Popular Shows:", font=("Helvetica", 10, "bold"), pady=(0, 0))
+        self.configure_ctk_label(add_win, "Latest Popular Shows:", font=("Helvetica", 12, "bold"), pady=(0, 0))
         popular_shows_frame = CTkFrame(add_win, fg_color="black")
         popular_shows_frame.pack(padx=0, fill=tk.X)
         
-        popular_shows = fetch_latest_shows()  # Ensure you use the latest fetch_latest_shows() function
+        popular_shows = self.api_client.fetch_latest_shows()  # Ensure you use the latest fetch_latest_shows() function
         for i, show in enumerate(popular_shows):
             row = i // 3
             col = i % 3
             btn = CTkButton(popular_shows_frame, text=show, text_color="white",
                             command=lambda s=show: (entry.delete(0, tk.END), entry.insert(0, s)))
             btn.grid(row=row, column=col, padx=2, pady=2)
-
-        # Pack the autocomplete listbox at the end to ensure it appears correctly
-        autocomplete_listbox.pack(padx=10, fill=tk.X)
 
     def configure_ctk_button(self, parent, text, command, row, column, padx=5, pady=5):
         """Configure a CTkButton with the given parameters."""
@@ -308,15 +276,14 @@ class GUIManager:
         return label
 
     def configure_radiobutton(self, parent, text, variable, value, command):
-        """Configure a Radiobutton with the given parameters."""
-        rb = tk.Radiobutton(parent, text=text, variable=variable, value=value,
-                            command=command, bg="black", fg="white", selectcolor="grey")
+        """Configure a CTkRadioButton with the given parameters."""
+        rb = CTkRadioButton(parent, text=text, variable=variable, value=value, command=command, text_color="white")
         rb.pack(side=tk.LEFT, padx=5)
         return rb
 
     def update_autocomplete(self, event, entry, method_var, autocomplete_listbox):
         """Update the autocomplete suggestions based on the user's input."""
-        if method_var.get() != "name":
+        if (method_var.get() != "name"):
             autocomplete_listbox.pack_forget()
             return
         typed = entry.get().strip()
@@ -324,9 +291,7 @@ class GUIManager:
             autocomplete_listbox.pack_forget()
             return
         try:
-            url = f"{TVMAZE_SEARCH_URL}{typed}"
-            r = requests.get(url)
-            results = r.json()
+            results = self.api_client.search_shows(typed)
             suggestions = []
             for item in results:
                 show_name = item.get("show", {}).get("name")
@@ -336,7 +301,8 @@ class GUIManager:
                 autocomplete_listbox.delete(0, tk.END)
                 for suggestion in suggestions:
                     autocomplete_listbox.insert(tk.END, suggestion)
-                autocomplete_listbox.pack(padx=10, fill=tk.X)
+                autocomplete_listbox.place(x=entry.winfo_x(), y=entry.winfo_y() + entry.winfo_height())
+                autocomplete_listbox.lift()
             else:
                 autocomplete_listbox.pack_forget()
         except Exception:
@@ -344,9 +310,11 @@ class GUIManager:
 
     def on_listbox_select(self, event, entry, autocomplete_listbox):
         """Handle the selection of an item from the autocomplete listbox."""
-        if autocomplete_listbox.curselection():
-            index = autocomplete_listbox.curselection()[0]
-            value = autocomplete_listbox.get(index)
-            entry.delete(0, tk.END)
-            entry.insert(0, value)
-            autocomplete_listbox.pack_forget()
+        selected_value = autocomplete_listbox.get(autocomplete_listbox.curselection())
+        entry.delete(0, tk.END)
+        entry.insert(0, selected_value)
+        autocomplete_listbox.place_forget()
+
+    def close_autocomplete(self, event, autocomplete_listbox):
+        """Close the autocomplete listbox when clicking anywhere in the add show window."""
+        autocomplete_listbox.place_forget()
