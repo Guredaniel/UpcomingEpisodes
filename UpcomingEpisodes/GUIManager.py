@@ -64,7 +64,7 @@ class GUIManager:
         open_imdb_button = CTkButton(control_frame, text="Open IMDb Page", command=lambda: self.open_imdb())
         open_imdb_button.grid(row=0, column=3, padx=5)
 
-        open_qbittorrent_button = CTkButton(control_frame, text="Send to qBittorrent", command=lambda: self.open_qbittorrent_with_magnet())
+        open_qbittorrent_button = CTkButton(control_frame, text="Send to qBittorrent", command=lambda: self.send_to_qbittorrent())
         open_qbittorrent_button.grid(row=0, column=4, padx=5)
 
         search_label = CTkLabel(control_frame, text="Search on:", text_color="white")
@@ -179,14 +179,40 @@ class GUIManager:
         submit_button = CTkButton(credentials_win, text="Submit", command=submit_credentials, text_color="white")
         submit_button.pack(pady=10)
 
-    def open_qbittorrent_with_magnet(self):
-        """Send the magnet URL from the clipboard to the qBittorrent web interface with authentication."""
+    def open_qbittorrent_with_magnet(self, magnet_url, from_clipboard=False):
+        """Send the magnet URL to the qBittorrent web interface with authentication."""
         try:
-            magnet_url = pyperclip.paste()
-            if not magnet_url.startswith("magnet:"):
-                self.handle_error("Clipboard does not contain a valid magnet URL.")
-                return
-            self.api_client.open_qbittorrent_with_magnet(magnet_url)
+            # Prompt the user to select whether the content is a movie or a series
+            def on_select(option):
+                is_series = (option == "Series")
+                self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
+                prompt_win.destroy()
+
+            prompt_win = CTkToplevel(self.root)
+            prompt_win.title("Select Content Type")
+            prompt_win.geometry("320x120")
+            prompt_win.configure(fg_color="black")
+
+            # Ensure the new window is in the foreground
+            prompt_win.lift()
+            prompt_win.focus_force()
+            prompt_win.transient(self.root)
+
+            if from_clipboard:
+                prompt_label = CTkLabel(prompt_win, text="A magnet URL was detected in the clipboard.\nIs this a movie or a series?", text_color="white")
+            else:
+                prompt_label = CTkLabel(prompt_win, text="Is this a movie or a series?", text_color="white")
+            prompt_label.pack(pady=10)
+
+            button_frame = CTkFrame(prompt_win, fg_color="black")
+            button_frame.pack(pady=10)
+
+            movie_button = CTkButton(button_frame, text="Movie", command=lambda: on_select("Movie"), text_color="white")
+            movie_button.grid(row=0, column=0, padx=10)
+
+            series_button = CTkButton(button_frame, text="Series", command=lambda: on_select("Series"), text_color="white")
+            series_button.grid(row=0, column=1, padx=10)
+
         except Exception as e:
             self.handle_error(f"Failed to open qBittorrent: {e}")
 
@@ -266,7 +292,7 @@ class GUIManager:
         """
         add_win = CTkToplevel(self.root)
         add_win.title("Add Show")
-        add_win.geometry("550x360")
+        add_win.geometry("610x360")
         add_win.configure(fg_color="black")  # Set background color to black
 
         # Ensure the new window is in the foreground
@@ -439,7 +465,7 @@ class GUIManager:
         """Open the settings window."""
         settings_win = CTkToplevel(self.root)
         settings_win.title("Settings")
-        settings_win.geometry("350x400")  # Adjusted height to accommodate new setting
+        settings_win.geometry("350x500")  # Adjusted height to accommodate new setting
         settings_win.configure(fg_color="black")
 
         # Ensure the new window is in the foreground
@@ -462,6 +488,18 @@ class GUIManager:
         qbittorrent_url_entry.insert(0, self.qbittorrent_url)
         qbittorrent_url_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
 
+        # Series directory entry
+        self.configure_ctk_label(settings_frame, "Series Directory:", pady=(10, 0))
+        series_directory_entry = CTkEntry(settings_frame, width=40, fg_color="black", text_color="white")
+        series_directory_entry.insert(0, self.api_client.series_directory)
+        series_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
+
+        # Movies directory entry
+        self.configure_ctk_label(settings_frame, "Movies Directory:", pady=(10, 0))
+        movies_directory_entry = CTkEntry(settings_frame, width=40, fg_color="black", text_color="white")
+        movies_directory_entry.insert(0, self.api_client.movies_directory)
+        movies_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
+
         # Quality setting toggle
         quality_setting_var = tk.BooleanVar(value=self.quality_setting_enabled)
         quality_setting_check = CTkCheckBox(settings_frame, text="Enable Quality Setting", variable=quality_setting_var, text_color="white")
@@ -478,6 +516,10 @@ class GUIManager:
         def save_settings():
             self.qbittorrent_url = qbittorrent_url_entry.get().strip()
             self.cache_manager.save_setting("qbittorrent_url", self.qbittorrent_url)
+            self.api_client.series_directory = series_directory_entry.get().strip()
+            self.cache_manager.save_setting("series_directory", self.api_client.series_directory)
+            self.api_client.movies_directory = movies_directory_entry.get().strip()
+            self.cache_manager.save_setting("movies_directory", self.api_client.movies_directory)
             self.quality_setting_enabled = quality_setting_var.get()
             self.cache_manager.save_setting("quality_setting_enabled", self.quality_setting_enabled)
             self.video_quality = quality_var.get()
@@ -506,9 +548,19 @@ class GUIManager:
             clipboard_content = pyperclip.paste()
             if (clipboard_content.startswith("magnet:") and clipboard_content != self.last_magnet_url):
                 self.last_magnet_url = clipboard_content
-                if messagebox.askyesno("Magnet URL Detected", "A magnet URL was detected in the clipboard. Do you want to send it to qBittorrent?"):
-                    self.open_qbittorrent_with_magnet()
+                self.open_qbittorrent_with_magnet(clipboard_content, from_clipboard=True)
         except Exception as e:
             self.handle_error(f"Failed to monitor clipboard: {e}")
         finally:
             self.clipboard_monitor_id = self.root.after(1000, self.monitor_clipboard)  # Check the clipboard every second
+
+    def send_to_qbittorrent(self):
+        """Send the magnet URL from the clipboard to the qBittorrent web interface with authentication."""
+        try:
+            magnet_url = pyperclip.paste()
+            if not magnet_url.startswith("magnet:"):
+                self.handle_error("Clipboard does not contain a valid magnet URL.")
+                return
+            self.open_qbittorrent_with_magnet(magnet_url)
+        except Exception as e:
+            self.handle_error(f"Failed to open qBittorrent: {e}")

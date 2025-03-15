@@ -13,13 +13,15 @@ TMDB_POPULAR_TV_URL = "https://www.themoviedb.org/tv"
 NYAA_RSS_URL = "https://nyaa.si/?page=rss"
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Language': 'en-GB,en;q=0.9',
 }
 
 class APIClient:
     def __init__(self, cache_manager):
         self.cache_manager = cache_manager
         self.qbittorrent_url = self.cache_manager.load_setting("qbittorrent_url", "http://192.168.1.113:8080/")
+        self.series_directory = self.cache_manager.load_setting("series_directory", "/media/external/Series")
+        self.movies_directory = self.cache_manager.load_setting("movies_directory", "/media/external/Movies")
 
     def get_next_episode(self, show_name):
         """
@@ -138,8 +140,8 @@ class APIClient:
             print(f"Failed to fetch data: {e}")
             return ["Error fetching data"]
 
-    def open_qbittorrent_with_magnet(self, magnet_url):
-        """Send the magnet URL to the qBittorrent web interface with authentication."""
+    def open_qbittorrent_with_magnet(self, magnet_url, is_series=False):
+        """Send the magnet URL to the qBittorrent web interface with authentication and optional save path."""
         try:
             # Retrieve authentication details from cache
             username, password = self.cache_manager.load_credentials()
@@ -158,8 +160,16 @@ class APIClient:
             if login_response.status_code != 200:
                 raise Exception(f"Failed to login to qBittorrent: {login_response.text}")
             
+            # Determine save path
+            save_path = self.series_directory if is_series else self.movies_directory
+            
+            # Prepare data payload
+            data = {"urls": magnet_url}
+            if save_path:
+                data["savepath"] = save_path
+            
             # Send the magnet URL to the qBittorrent web interface
-            response = session.post(qbittorrent_url, data={"urls": magnet_url})
+            response = session.post(qbittorrent_url, data=data)
             
             if response.status_code != 200:
                 raise Exception(f"Failed to add torrent: {response.text}")
