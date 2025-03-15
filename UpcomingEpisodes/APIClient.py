@@ -40,7 +40,10 @@ class APIClient:
                 response = requests.get(url)
                 if response.status_code == 200:
                     data = response.json()
-                    self.cache_manager.set_cached_data(cache_file, data)
+                    # Use the correct show name for caching
+                    correct_show_name = data.get("name", show_name)
+                    correct_cache_file = self.cache_manager.get_cache_file_path(correct_show_name)
+                    self.cache_manager.set_cached_data(correct_cache_file, data)
                 else:
                     data = None
             except Exception:
@@ -56,6 +59,8 @@ class APIClient:
                 "airdate": "N/A",
                 "imdb": imdb_id
             }
+        
+        show_name = data.get("name", show_name)  # Use the full show name from the API
         
         if "_embedded" in data and "nextepisode" in data["_embedded"]:
             ep = data["_embedded"]["nextepisode"]
@@ -224,3 +229,14 @@ class APIClient:
             return magnet_link
         else:
             return None
+
+    def check_qbittorrent_connection(self):
+        """Check the connection to the qBittorrent web interface."""
+        try:
+            response = requests.get(self.qbittorrent_url, timeout=5)
+            if response.status_code == 200 and "qBittorrent" in response.text:
+                return True, "Connection successful"
+            else:
+                return False, f"Connection failed: {response.status_code} {response.reason}"
+        except requests.exceptions.RequestException as e:
+            return False, f"Connection failed: {e}"

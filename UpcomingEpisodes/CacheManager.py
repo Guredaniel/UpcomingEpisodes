@@ -114,6 +114,11 @@ class CacheManager:
         password = cipher_suite.decrypt(credentials["password"].encode()).decode()
         return username, password
 
+    def credentials_exist(self):
+        """Check if qBittorrent credentials exist."""
+        credentials_path = os.path.join(self.get_cache_directory(), "qbittorrent_credentials.json")
+        return os.path.exists(credentials_path)
+
     def save_setting(self, key, value):
         """Save a setting to the cache."""
         settings_path = os.path.join(self.get_cache_directory(), "settings.json")

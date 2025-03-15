@@ -6,6 +6,7 @@ import os
 import pyperclip
 from tkinter import PhotoImage  # Add this import for the gear icon
 from tkinter import StringVar  # Add this import
+import threading  # Add this import
 
 class GUIManager:
     def __init__(self, root, cache_manager, watchlist_manager, api_client):
@@ -172,7 +173,7 @@ class GUIManager:
             if username and password:
                 self.cache_manager.save_credentials(username, password)
                 credentials_win.destroy()
-                self.open_qbittorrent_with_magnet()
+                self.open_qbittorrent_with_magnet(self.last_magnet_url)  # Pass the magnet_url argument
             else:
                 self.handle_error("Please enter both username and password.")
 
@@ -182,6 +183,11 @@ class GUIManager:
     def open_qbittorrent_with_magnet(self, magnet_url, from_clipboard=False):
         """Send the magnet URL to the qBittorrent web interface with authentication."""
         try:
+            # Check if credentials exist
+            if not self.cache_manager.credentials_exist():
+                self.prompt_qbittorrent_credentials()
+                return
+
             # Prompt the user to select whether the content is a movie or a series
             def on_select(option):
                 is_series = (option == "Series")
@@ -213,15 +219,10 @@ class GUIManager:
             series_button = CTkButton(button_frame, text="Series", command=lambda: on_select("Series"), text_color="white")
             series_button.grid(row=0, column=1, padx=10)
 
+        except (ConnectionError, TimeoutError) as e:
+            self.handle_error(f"Network error: {e}")
         except Exception as e:
             self.handle_error(f"Failed to open qBittorrent: {e}")
-
-    def open_qbittorrent_web(self):
-        """Open the qBittorrent web interface."""
-        try:
-            self.api_client.open_qbittorrent_web()
-        except Exception as e:
-            self.handle_error(f"Failed to open qBittorrent web interface: {e}")
 
     def search_and_open_url(self, show_name, episode=None, base_url="https://ext.to/browse/?q="):
         """Search and open URL for the show and previous episode if provided."""
@@ -263,25 +264,6 @@ class GUIManager:
                 self.handle_error("Invalid search option selected.")
         except IndexError:
             self.handle_error("Please select a show to search.")
-
-    def search_and_send_to_qbittorrent(self, site):
-        """Search for the selected show and send the magnet link to qBittorrent."""
-        try:
-            selected_item = self.upcoming_tree.selection()[0]
-            values = self.upcoming_tree.item(selected_item)["values"]
-            show_name = values[0]
-            episode = values[1]
-            magnet_link = self.api_client.search_torrent(show_name, episode, site)
-            if magnet_link:
-                pyperclip.copy(magnet_link)
-                self.api_client.open_qbittorrent_with_magnet(magnet_link)
-                messagebox.showinfo("Success", "Magnet link copied and sent to qBittorrent.")
-            else:
-                self.handle_error("Failed to find a magnet link.")
-        except IndexError:
-            self.handle_error("Please select a show to search.")
-        except Exception as e:
-            self.handle_error(f"An error occurred: {e}")
 
     def open_add_show_window(self):
         """
@@ -357,11 +339,12 @@ class GUIManager:
                 if user_input in self.watchlist_manager.watchlist:
                     result_label.configure(text=f"'{user_input}' is already in your watchlist.")
                     return
-                info = self.api_client.get_next_episode(user_input)
-                if info["title"] == "Failed to fetch info":
-                    result_label.configure(text=f"Show '{user_input}' not found. Check the name.")
-                    return
-                new_show = info["show"]
+                try:
+                    self.watchlist_manager.add_show(user_input)
+                    self.refresh_upcoming()
+                    add_win.destroy()
+                except ValueError as e:
+                    result_label.configure(text=str(e))
             else:
                 data = self.api_client.lookup_show_by_imdb(user_input)
                 if data is None:
@@ -371,10 +354,10 @@ class GUIManager:
                 if new_show in self.watchlist_manager.watchlist:
                     result_label.configure(text=f"'{new_show}' is already in your watchlist.")
                     return
-            self.watchlist_manager.add_show(new_show)
-            self.refresh_upcoming()
-            add_win.destroy()
-        
+                self.watchlist_manager.add_show(new_show)
+                self.refresh_upcoming()
+                add_win.destroy()
+
         # Validate and add show (buttons side by side)
         button_frame = CTkFrame(add_win, fg_color="black")
         button_frame.pack(pady=(0, 5))
@@ -442,10 +425,13 @@ class GUIManager:
 
     def on_listbox_select(self, event, entry, autocomplete_listbox):
         """Handle the selection of an item from the autocomplete listbox."""
-        selected_value = autocomplete_listbox.get(autocomplete_listbox.curselection())
-        entry.delete(0, tk.END)
-        entry.insert(0, selected_value)
-        autocomplete_listbox.place_forget()
+        try:
+            selected_value = autocomplete_listbox.get(autocomplete_listbox.curselection())
+            entry.delete(0, tk.END)
+            entry.insert(0, selected_value)
+            autocomplete_listbox.place_forget()
+        except tk.TclError:
+            pass
 
     def close_autocomplete(self, event, autocomplete_listbox):
         """Close the autocomplete listbox when clicking anywhere in the add show window."""
@@ -481,29 +467,38 @@ class GUIManager:
         clipboard_monitor_var = tk.BooleanVar(value=self.monitor_clipboard_enabled)
         clipboard_monitor_check = CTkCheckBox(settings_frame, text="Enable Clipboard Monitoring", variable=clipboard_monitor_var, command=lambda: self.toggle_clipboard_monitoring(clipboard_monitor_var.get()), text_color="white")
         clipboard_monitor_check.pack(pady=10, anchor="w")
+        clipboard_monitor_var.trace_add("write", lambda *args: self.save_setting("monitor_clipboard_enabled", clipboard_monitor_var.get()))
 
         # qBittorrent URL entry
         self.configure_ctk_label(settings_frame, "qBittorrent URL:", pady=(10, 0))
         qbittorrent_url_entry = CTkEntry(settings_frame, width=40, fg_color="black", text_color="white")
         qbittorrent_url_entry.insert(0, self.qbittorrent_url)
         qbittorrent_url_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
+        qbittorrent_url_entry.bind("<FocusOut>", lambda event: self.save_qbittorrent_url(qbittorrent_url_entry.get().strip()))
+
+        # Check connection button
+        check_connection_button = CTkButton(settings_frame, text="Check Connection", command=lambda: self.check_qbittorrent_connection(check_connection_button), text_color="white")
+        check_connection_button.pack(pady=10)
 
         # Series directory entry
         self.configure_ctk_label(settings_frame, "Series Directory:", pady=(10, 0))
         series_directory_entry = CTkEntry(settings_frame, width=40, fg_color="black", text_color="white")
         series_directory_entry.insert(0, self.api_client.series_directory)
         series_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
+        series_directory_entry.bind("<FocusOut>", lambda event: self.save_series_directory(series_directory_entry.get().strip()))
 
         # Movies directory entry
         self.configure_ctk_label(settings_frame, "Movies Directory:", pady=(10, 0))
         movies_directory_entry = CTkEntry(settings_frame, width=40, fg_color="black", text_color="white")
         movies_directory_entry.insert(0, self.api_client.movies_directory)
         movies_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
+        movies_directory_entry.bind("<FocusOut>", lambda event: self.save_movies_directory(movies_directory_entry.get().strip()))
 
         # Quality setting toggle
         quality_setting_var = tk.BooleanVar(value=self.quality_setting_enabled)
         quality_setting_check = CTkCheckBox(settings_frame, text="Enable Quality Setting", variable=quality_setting_var, text_color="white")
         quality_setting_check.pack(pady=10, anchor="w")
+        quality_setting_var.trace_add("write", lambda *args: self.save_setting("quality_setting_enabled", quality_setting_var.get()))
 
         # Video quality selection
         self.configure_ctk_label(settings_frame, "Select Video Quality:", pady=(10, 0))
@@ -511,25 +506,41 @@ class GUIManager:
         quality_options = ["480p", "720p", "1080p", "2160p"]
         quality_menu = ttk.OptionMenu(settings_frame, quality_var, self.video_quality, *quality_options)
         quality_menu.pack(pady=(0, 10), padx=10, fill=tk.X)
-
-        # Button to save settings
-        def save_settings():
-            self.qbittorrent_url = qbittorrent_url_entry.get().strip()
-            self.cache_manager.save_setting("qbittorrent_url", self.qbittorrent_url)
-            self.api_client.series_directory = series_directory_entry.get().strip()
-            self.cache_manager.save_setting("series_directory", self.api_client.series_directory)
-            self.api_client.movies_directory = movies_directory_entry.get().strip()
-            self.cache_manager.save_setting("movies_directory", self.api_client.movies_directory)
-            self.quality_setting_enabled = quality_setting_var.get()
-            self.cache_manager.save_setting("quality_setting_enabled", self.quality_setting_enabled)
-            self.video_quality = quality_var.get()
-            self.cache_manager.save_setting("video_quality", self.video_quality)
-            settings_win.destroy()
-
-        save_button = CTkButton(settings_frame, text="Save", command=save_settings, text_color="white")
-        save_button.pack(pady=20)
+        quality_var.trace_add("write", lambda *args: self.save_setting("video_quality", quality_var.get()))
 
         # Add other settings options here as needed
+
+    def save_qbittorrent_url(self, url):
+        """Save the qBittorrent URL setting."""
+        self.qbittorrent_url = url
+        self.cache_manager.save_setting("qbittorrent_url", self.qbittorrent_url)
+        self.api_client.qbittorrent_url = self.qbittorrent_url  # Update the APIClient instance
+
+    def save_series_directory(self, directory):
+        """Save the series directory setting."""
+        self.api_client.series_directory = directory
+        self.cache_manager.save_setting("series_directory", self.api_client.series_directory)
+
+    def save_movies_directory(self, directory):
+        """Save the movies directory setting."""
+        self.api_client.movies_directory = directory
+        self.cache_manager.save_setting("movies_directory", self.api_client.movies_directory)
+
+    def save_setting(self, key, value):
+        """Save a generic setting."""
+        self.cache_manager.save_setting(key, value)
+
+    def check_qbittorrent_connection(self, button):
+        """Check the connection to the qBittorrent web interface and update the button text."""
+        def run_check():
+            button.configure(text="Testing...")
+            success, message = self.api_client.check_qbittorrent_connection()
+            if success:
+                button.configure(text="Connection Successful")
+            else:
+                button.configure(text="Connection Failed")
+
+        threading.Thread(target=run_check).start()
 
     def toggle_clipboard_monitoring(self, enabled):
         """Toggle clipboard monitoring on or off."""
@@ -549,6 +560,8 @@ class GUIManager:
             if (clipboard_content.startswith("magnet:") and clipboard_content != self.last_magnet_url):
                 self.last_magnet_url = clipboard_content
                 self.open_qbittorrent_with_magnet(clipboard_content, from_clipboard=True)
+        except pyperclip.PyperclipException as e:
+            self.handle_error(f"Clipboard error: {e}")
         except Exception as e:
             self.handle_error(f"Failed to monitor clipboard: {e}")
         finally:
