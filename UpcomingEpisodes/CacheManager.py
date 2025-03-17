@@ -67,28 +67,6 @@ class CacheManager:
         if os.path.exists(cache_file):
             os.remove(cache_file)
 
-    def get_sort_type(self):
-        """Get the cached sort type if it exists."""
-        cache_dir = self.get_cache_directory()
-        sort_file = os.path.join(cache_dir, "sort_type.json")
-        try:
-            with open(sort_file, "r") as f:
-                data = json.load(f)
-            return data.get("sort_column"), data.get("sort_reverse")
-        except Exception:
-            return None, False
-
-    def set_sort_type(self, sort_column, sort_reverse):
-        """Cache the sort type."""
-        cache_dir = self.get_cache_directory()
-        sort_file = os.path.join(cache_dir, "sort_type.json")
-        data = {"sort_column": sort_column, "sort_reverse": sort_reverse}
-        try:
-            with open(sort_file, "w") as f:
-                json.dump(data, f)
-        except Exception as e:
-            print("Error saving sort type:", e)
-
     def save_credentials(self, username, password):
         """Save encrypted qBittorrent credentials."""
         cipher_suite = Fernet(self.key)

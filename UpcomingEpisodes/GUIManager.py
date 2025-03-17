@@ -8,13 +8,49 @@ from tkinter import PhotoImage  # Add this import for the gear icon
 from tkinter import StringVar  # Add this import
 import threading  # Add this import
 
+# Implement a custom Tooltip class with delay
+class Tooltip:
+    def __init__(self, widget, text, delay=500):
+        self.widget = widget
+        self.text = text
+        self.delay = delay
+        self.tooltip_window = None
+        self.widget.bind("<Enter>", self.schedule_tooltip)
+        self.widget.bind("<Leave>", self.hide_tooltip)
+        self.after_id = None
+
+    def schedule_tooltip(self, event=None):
+        self.after_id = self.widget.after(self.delay, self.show_tooltip)
+
+    def show_tooltip(self):
+        if self.tooltip_window or not self.text:
+            return
+        x, y, _, _ = self.widget.bbox("insert")
+        x += self.widget.winfo_rootx() + 25
+        y += self.widget.winfo_rooty() + 25
+        self.tooltip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(tw, text=self.text, justify=tk.LEFT,
+                         background="#ffffe0", relief=tk.SOLID, borderwidth=1,
+                         font=("Helvetica", "8", "normal"))
+        label.pack(ipadx=1)
+
+    def hide_tooltip(self, event=None):
+        if self.after_id:
+            self.widget.after_cancel(self.after_id)
+            self.after_id = None
+        tw = self.tooltip_window
+        self.tooltip_window = None
+        if tw:
+            tw.destroy()
+
 class GUIManager:
     def __init__(self, root, cache_manager, watchlist_manager, api_client):
         self.root = root
         self.cache_manager = cache_manager
         self.watchlist_manager = watchlist_manager
         self.api_client = api_client
-        self.sort_column, self.sort_reverse = self.cache_manager.get_sort_type()
         self.monitor_clipboard_enabled = self.cache_manager.load_setting("monitor_clipboard_enabled", True)  # Load setting from cache
         self.qbittorrent_url = self.cache_manager.load_setting("qbittorrent_url", "http://192.168.1.113:8080/")  # Load setting from cache
         self.video_quality = self.cache_manager.load_setting("video_quality", "1080p")  # Load setting from cache
@@ -38,7 +74,7 @@ class GUIManager:
         columns = ("Show", "Episode", "Title", "Air Date")
         self.upcoming_tree = ttk.Treeview(main_frame, columns=columns, show="headings")
         for col in columns:
-            self.upcoming_tree.heading(col, text=col, command=lambda _col=col: self.sort_upcoming_tree(_col))
+            self.upcoming_tree.heading(col, text=col)
             self.upcoming_tree.column(col, width=120 if col != "Title" else 200)
         self.upcoming_tree.pack(fill=tk.BOTH, expand=True)
 
@@ -55,44 +91,49 @@ class GUIManager:
 
         refresh_button = CTkButton(control_frame, text="Refresh", command=lambda: self.refresh_upcoming())
         refresh_button.grid(row=0, column=0, padx=5)
+        Tooltip(refresh_button, text="Refresh the list of upcoming episodes")
 
         add_show_button = CTkButton(control_frame, text="Add Show", command=lambda: self.open_add_show_window())
         add_show_button.grid(row=0, column=1, padx=5)
+        Tooltip(add_show_button, text="Add a new show to the watchlist")
 
         remove_show_button = CTkButton(control_frame, text="Remove Show", command=lambda: self.remove_show())
         remove_show_button.grid(row=0, column=2, padx=5)
+        Tooltip(remove_show_button, text="Remove the selected show from the watchlist")
 
         open_imdb_button = CTkButton(control_frame, text="Open IMDb Page", command=lambda: self.open_imdb())
         open_imdb_button.grid(row=0, column=3, padx=5)
+        Tooltip(open_imdb_button, text="Open the IMDb page for the selected show")
 
         open_qbittorrent_button = CTkButton(control_frame, text="Send to qBittorrent", command=lambda: self.send_to_qbittorrent())
         open_qbittorrent_button.grid(row=0, column=4, padx=5)
+        Tooltip(open_qbittorrent_button, text="Send the copied magnet link to qBittorrent")
 
         search_label = CTkLabel(control_frame, text="Search on:", text_color="white")
         search_label.grid(row=1, column=0, padx=5, pady=5)
 
         search_rutor_button = CTkButton(control_frame, text="Rutor", command=lambda: self.search_selected("rutor"))
         search_rutor_button.grid(row=1, column=1, padx=5)
+        Tooltip(search_rutor_button, text="Search for the selected show on Rutor")
 
         search_ext_button = CTkButton(control_frame, text="EXT", command=lambda: self.search_selected("ext"))
         search_ext_button.grid(row=1, column=2, padx=5)
+        Tooltip(search_ext_button, text="Search for the selected show on EXT")
 
         search_nyaa_button = CTkButton(control_frame, text="Nyaa", command=lambda: self.search_selected("nyaa"))
         search_nyaa_button.grid(row=1, column=3, padx=5)
+        Tooltip(search_nyaa_button, text="Search for the selected show on Nyaa")
 
         # Add settings button with gear icon
-        settings_icon = PhotoImage(file=r"C:\Users\gured\Downloads\211751_gear_icon.png")  # Use raw string for the file path
+        settings_icon = PhotoImage(file=r"gear_icon.png")  # Use raw string for the file path
         settings_icon = settings_icon.subsample(2, 2)  # Make the icon smaller
         settings_button = tk.Button(self.root, image=settings_icon, command=self.open_settings_window, bg="gray")  # Change background color
         settings_button.image = settings_icon  # Keep a reference to avoid garbage collection
         settings_button.place(relx=1.0, rely=0.0, anchor="ne", x=-10, y=10)  # Position the button at the top right
+        Tooltip(settings_button, text="Open the settings window")
 
         # Load initial data
         self.refresh_upcoming()
-
-        # Apply initial sort if available
-        if self.sort_column:
-            self.sort_upcoming_tree(self.sort_column, initial=True)
 
         # Initialize last_magnet_url
         self.last_magnet_url = ""
@@ -107,16 +148,19 @@ class GUIManager:
 
     def refresh_upcoming(self):
         """Refresh the table with the next episode info for each show in the watchlist."""
-        for row in self.upcoming_tree.get_children():
-            self.upcoming_tree.delete(row)
-        for show in self.watchlist_manager.watchlist:
-            info = self.api_client.get_next_episode(show)
-            self.upcoming_tree.insert("", "end", values=(
-                info["show"],
-                info["episode"],
-                info["title"],
-                info["airdate"]
-            ))
+        def fetch_data():
+            for row in self.upcoming_tree.get_children():
+                self.upcoming_tree.delete(row)
+            for show in self.watchlist_manager.watchlist:
+                info = self.api_client.get_next_episode(show)
+                self.upcoming_tree.insert("", "end", values=(
+                    info["show"],
+                    info["episode"],
+                    info["title"],
+                    info["airdate"]
+                ))
+
+        threading.Thread(target=fetch_data).start()
 
     def remove_show(self):
         """Remove the selected show from the watchlist and delete its cache file."""
@@ -436,16 +480,6 @@ class GUIManager:
     def close_autocomplete(self, event, autocomplete_listbox):
         """Close the autocomplete listbox when clicking anywhere in the add show window."""
         autocomplete_listbox.place_forget()
-
-    def sort_upcoming_tree(self, col, initial=False):
-        """Sort the upcoming_tree by the given column."""
-        data = [(self.upcoming_tree.set(child, col), child) for child in self.upcoming_tree.get_children('')]
-        data.sort(reverse=self.sort_reverse)
-        for index, (val, child) in enumerate(data):
-            self.upcoming_tree.move(child, '', index)
-        if not initial:
-            self.sort_reverse = not self.sort_reverse
-            self.cache_manager.set_sort_type(col, self.sort_reverse)
 
     def open_settings_window(self):
         """Open the settings window."""
