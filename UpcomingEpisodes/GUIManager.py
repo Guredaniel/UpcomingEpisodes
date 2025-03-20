@@ -1,5 +1,5 @@
 ﻿import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import YES, messagebox, ttk
 from customtkinter import CTkFrame, CTkLabel, CTkButton, CTkEntry, CTkToplevel, CTkRadioButton, CTkCheckBox, CTkTabview
 import webbrowser
 import os
@@ -189,7 +189,7 @@ class GUIManager:
         else:
             self.handle_error(f"IMDb page not available for {show}.")
     
-    def prompt_qbittorrent_credentials(self):
+    def prompt_qbittorrent_credentials(self, magnet=True):
         """Prompt the user for qBittorrent username and password."""
         credentials_win = CTkToplevel(self.root)
         credentials_win.title("qBittorrent Credentials")
@@ -212,17 +212,18 @@ class GUIManager:
         password_entry.pack(pady=(0, 5), padx=10, fill=tk.X)
 
         # Button to submit credentials
-        def submit_credentials():
+        def submit_credentials(magnet):
             username = username_entry.get().strip()
             password = password_entry.get().strip()
             if username and password:
                 self.cache_manager.save_credentials(username, password)
                 credentials_win.destroy()
-                self.open_qbittorrent_with_magnet(self.last_magnet_url)  # Pass the magnet_url argument
+                if magnet == True:
+                    self.open_qbittorrent_with_magnet(self.last_magnet_url)  # Pass the magnet_url argument
             else:
                 self.handle_error("Please enter both username and password.")
 
-        submit_button = CTkButton(credentials_win, text="Submit", command=submit_credentials, text_color="white")
+        submit_button = CTkButton(credentials_win, text="Submit",  command=lambda: submit_credentials(magnet), text_color="white")
         submit_button.pack(pady=10)
 
     def open_qbittorrent_with_magnet(self, magnet_url, from_clipboard=False):
@@ -554,13 +555,24 @@ class GUIManager:
             )
             check_connection_button.pack(pady=10)
 
+            login_frame = CTkFrame(qbittorent_frame)
+            login_frame.pack(pady=10)  # Add padding as needed
+
+            save_login_button = CTkButton(
+                login_frame,
+                text="Enter Login Information",
+                command=lambda: self.prompt_qbittorrent_credentials(magnet=False),
+                text_color="white"
+            )
+            save_login_button.pack(side="left", padx=5)
+
             delete_login_button = CTkButton(
-                qbittorent_frame,
+                login_frame,
                 text="Remove Login Information",
                 command=lambda: self.delete_login_cache(),
                 text_color="white"
             )
-            delete_login_button.pack(pady=10)
+            delete_login_button.pack(side="left", padx=5)
 
             # Series Directory entry
             self.configure_ctk_label(qbittorent_frame, "Series Directory:", pady=(10, 0))
