@@ -34,7 +34,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller customtkinter pyperclip requests beautifulsoup4 cryptography
       - name: Build Exec
-        run: pyinstaller --onefile UpcomingEpisodes.py
+        run: pyinstaller --onefile src/UpcomingEpisodes.py
       
       # Upload the .exe as an artifact
       - name: Upload a Build Artifact
