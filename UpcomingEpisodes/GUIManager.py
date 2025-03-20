@@ -1,12 +1,11 @@
 ﻿import tkinter as tk
 from tkinter import messagebox, ttk
-from customtkinter import CTkFrame, CTkLabel, CTkButton, CTkEntry, CTkToplevel, CTkRadioButton, CTkCheckBox
+from customtkinter import CTkFrame, CTkLabel, CTkButton, CTkEntry, CTkToplevel, CTkRadioButton, CTkCheckBox, CTkTabview
 import webbrowser
 import os
 import pyperclip
-from tkinter import PhotoImage  # Add this import for the gear icon
-from tkinter import StringVar  # Add this import
-import threading  # Add this import
+from tkinter import StringVar
+import threading
 
 # Implement a custom Tooltip class with delay
 class Tooltip:
@@ -493,7 +492,7 @@ class GUIManager:
 
 
     def open_settings_window(self):
-        """Open the settings window."""
+        """Open the settings window with a tabbed interface."""
         if hasattr(self, 'settings_win') and self.settings_win and self.settings_win.winfo_exists():
             # If the window already exists, bring it to the foreground
             self.settings_win.lift()
@@ -502,67 +501,104 @@ class GUIManager:
             # Create the settings window
             self.settings_win = CTkToplevel(self.root)
             self.settings_win.title("Settings")
-            self.settings_win.geometry("350x470")  # Adjusted height to accommodate new setting
+            self.settings_win.geometry("400x300")
             self.settings_win.configure(fg_color="black")
-
-            # Handle the window close event to reset the reference
             self.settings_win.protocol("WM_DELETE_WINDOW", self.on_settings_window_close)
-
-            # Ensure the new window is in the foreground
             self.settings_win.lift()
             self.settings_win.focus_force()
             self.settings_win.transient(self.root)
 
-            # Create a frame for better organization
-            settings_frame = CTkFrame(self.settings_win, fg_color="black")
-            settings_frame.pack(pady=10, padx=10, fill=tk.BOTH, expand=True)
+            # Create a CTkTabview to organize settings into tabs
+            tabview = CTkTabview(self.settings_win, width=380, height=480)
+            tabview.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
 
+            # Add tabs for grouping settings
+            tabview.add("General")
+            tabview.add("Directories")
+            tabview.add("Quality")
+
+            # === General Tab ===
+            general_frame = tabview.tab("General")
             # Clipboard monitoring toggle
             clipboard_monitor_var = tk.BooleanVar(value=self.monitor_clipboard_enabled)
-            clipboard_monitor_check = CTkCheckBox(settings_frame, text="Enable Clipboard Monitoring", variable=clipboard_monitor_var, command=lambda: self.toggle_clipboard_monitoring(clipboard_monitor_var.get()), text_color="white")
-            clipboard_monitor_check.pack(pady=10, anchor="w")
-            clipboard_monitor_var.trace_add("write", lambda *args: self.save_setting("monitor_clipboard_enabled", clipboard_monitor_var.get()))
+            clipboard_monitor_check = CTkCheckBox(
+                master=general_frame,
+                text="Enable Clipboard Monitoring",
+                variable=clipboard_monitor_var,
+                command=lambda: self.toggle_clipboard_monitoring(clipboard_monitor_var.get()),
+                text_color="white"
+            )
+            clipboard_monitor_check.pack(pady=10, padx=10, anchor="w")
+            clipboard_monitor_var.trace_add(
+                "write",
+                lambda *args: self.save_setting("monitor_clipboard_enabled", clipboard_monitor_var.get())
+            )
 
-            # qBittorrent URL entry
-            self.configure_ctk_label(settings_frame, "qBittorrent URL:", pady=(10, 0))
-            qbittorrent_url_entry = CTkEntry(settings_frame, width=40, fg_color="black", text_color="white")
+            # qBittorrent settings (URL and check connection)
+            self.configure_ctk_label(general_frame, "qBittorrent URL:", pady=(10, 0))
+            qbittorrent_url_entry = CTkEntry(general_frame, width=40, fg_color="black", text_color="white")
             qbittorrent_url_entry.insert(0, self.qbittorrent_url)
             qbittorrent_url_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
-            qbittorrent_url_entry.bind("<FocusOut>", lambda event: self.save_qbittorrent_url(qbittorrent_url_entry.get().strip()))
+            qbittorrent_url_entry.bind(
+                "<FocusOut>",
+                lambda event: self.save_qbittorrent_url(qbittorrent_url_entry.get().strip())
+            )
 
-            # Check connection button
-            check_connection_button = CTkButton(settings_frame, text="Check Connection", command=lambda: self.check_qbittorrent_connection(check_connection_button), text_color="white")
+            check_connection_button = CTkButton(
+                general_frame,
+                text="Check Connection",
+                command=lambda: self.check_qbittorrent_connection(check_connection_button),
+                text_color="white"
+            )
             check_connection_button.pack(pady=10)
 
-            # Series directory entry
-            self.configure_ctk_label(settings_frame, "Series Directory:", pady=(10, 0))
-            series_directory_entry = CTkEntry(settings_frame, width=40, fg_color="black", text_color="white")
+            # === Directories Tab ===
+            directories_frame = tabview.tab("Directories")
+            # Series Directory entry
+            self.configure_ctk_label(directories_frame, "Series Directory:", pady=(10, 0))
+            series_directory_entry = CTkEntry(directories_frame, width=40, fg_color="black", text_color="white")
             series_directory_entry.insert(0, self.api_client.series_directory)
             series_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
-            series_directory_entry.bind("<FocusOut>", lambda event: self.save_series_directory(series_directory_entry.get().strip()))
+            series_directory_entry.bind(
+                "<FocusOut>",
+                lambda event: self.save_series_directory(series_directory_entry.get().strip())
+            )
 
-            # Movies directory entry
-            self.configure_ctk_label(settings_frame, "Movies Directory:", pady=(10, 0))
-            movies_directory_entry = CTkEntry(settings_frame, width=40, fg_color="black", text_color="white")
+            # Movies Directory entry
+            self.configure_ctk_label(directories_frame, "Movies Directory:", pady=(10, 0))
+            movies_directory_entry = CTkEntry(directories_frame, width=40, fg_color="black", text_color="white")
             movies_directory_entry.insert(0, self.api_client.movies_directory)
             movies_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
-            movies_directory_entry.bind("<FocusOut>", lambda event: self.save_movies_directory(movies_directory_entry.get().strip()))
+            movies_directory_entry.bind(
+                "<FocusOut>",
+                lambda event: self.save_movies_directory(movies_directory_entry.get().strip())
+            )
 
-            # Quality setting toggle
+            # === Quality Tab ===
+            quality_frame = tabview.tab("Quality")
+            # Enable quality setting toggle
             quality_setting_var = tk.BooleanVar(value=self.quality_setting_enabled)
-            quality_setting_check = CTkCheckBox(settings_frame, text="Enable Quality Setting", variable=quality_setting_var, text_color="white")
-            quality_setting_check.pack(pady=10, anchor="w")
-            quality_setting_var.trace_add("write", lambda *args: self.save_setting("quality_setting_enabled", quality_setting_var.get()))
+            quality_setting_check = CTkCheckBox(
+                quality_frame,
+                text="Enable Quality Setting",
+                variable=quality_setting_var,
+                text_color="white"
+            )
+            quality_setting_check.pack(pady=10, padx=10, anchor="w")
+            quality_setting_var.trace_add(
+                "write",
+                lambda *args: self.save_setting("quality_setting_enabled", quality_setting_var.get())
+            )
 
-            # Video quality selection
-            self.configure_ctk_label(settings_frame, "Select Video Quality:", pady=(10, 0))
-            quality_var = StringVar(value=self.video_quality)
+            # Video quality selection menu
+            self.configure_ctk_label(quality_frame, "Select Video Quality:", pady=(10, 0))
+            quality_var = tk.StringVar(value=self.video_quality)
             quality_options = ["480p", "720p", "1080p", "2160p"]
-            quality_menu = ttk.OptionMenu(settings_frame, quality_var, self.video_quality, *quality_options)
+            quality_menu = ttk.OptionMenu(quality_frame, quality_var, self.video_quality, *quality_options)
             quality_menu.pack(pady=(0, 10), padx=10, fill=tk.X)
             quality_var.trace_add("write", lambda *args: self.save_setting("video_quality", quality_var.get()))
 
-            # Add other settings options here as needed
+            # Additional tabs or settings options can be added here as needed
 
     def save_qbittorrent_url(self, url):
         """Save the qBittorrent URL setting."""
