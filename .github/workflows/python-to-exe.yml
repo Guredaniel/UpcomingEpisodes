@@ -4,6 +4,7 @@
 name: Python application
 
 on:
+  workflow_dispatch:  # Allows manual triggering of the workflow
   push:
     branches: [ "master" ]
   pull_request:
