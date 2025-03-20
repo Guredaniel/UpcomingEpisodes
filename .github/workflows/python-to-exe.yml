@@ -34,7 +34,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller customtkinter pyperclip requests beautifulsoup4 cryptography
       - name: Build Exec
-        run: pyinstaller --onefile --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient --hidden-import=WatchlistManager src/UpcomingEpisodes.py
+        run: pyinstaller --paths=src --onefile --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient --hidden-import=WatchlistManager src/UpcomingEpisodes.py
 
       # Upload the .exe as an artifact
       - name: Upload a Build Artifact
@@ -42,4 +42,7 @@ jobs:
         with:
           name: UpcomingEpisodes
           path: dist/UpcomingEpisodes.exe
+          
+      - name: Test Executable
+        run: dist/UpcomingEpisodes.exe
 
