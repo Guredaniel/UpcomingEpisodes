@@ -92,6 +92,29 @@ class CacheManager:
         password = cipher_suite.decrypt(credentials["password"].encode()).decode()
         return username, password
 
+    def delete_login_cache(self):
+        """Delete the qBittorrent credentials and key cache."""
+        credentials_path = os.path.join(self.get_cache_directory(), "qbittorrent_credentials.json")
+        key_path = os.path.join(self.get_cache_directory(), "key.key")
+        files_deleted = False  # Tracks whether any files were deleted
+
+        try:
+            if os.path.exists(credentials_path):
+                os.remove(credentials_path)
+                files_deleted = True
+        except Exception as e:
+            print(f"An error occurred while deleting the credentials cache: {e}")
+
+        try:  
+            if os.path.exists(key_path):
+                os.remove(key_path)
+                files_deleted = True
+        except Exception as e:
+            print(f"An error occurred while deleting the cache: {e}")
+
+        return files_deleted
+
+
     def credentials_exist(self):
         """Check if qBittorrent credentials exist."""
         credentials_path = os.path.join(self.get_cache_directory(), "qbittorrent_credentials.json")

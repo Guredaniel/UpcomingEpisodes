@@ -501,7 +501,7 @@ class GUIManager:
             # Create the settings window
             self.settings_win = CTkToplevel(self.root)
             self.settings_win.title("Settings")
-            self.settings_win.geometry("400x300")
+            self.settings_win.geometry("400x450")
             self.settings_win.configure(fg_color="black")
             self.settings_win.protocol("WM_DELETE_WINDOW", self.on_settings_window_close)
             self.settings_win.lift()
@@ -513,16 +513,16 @@ class GUIManager:
             tabview.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
 
             # Add tabs for grouping settings
-            tabview.add("General")
-            tabview.add("Directories")
+            tabview.add("Monitor")
+            tabview.add("qBittorent")
             tabview.add("Quality")
 
-            # === General Tab ===
-            general_frame = tabview.tab("General")
+            # === Monitor Tab ===
+            monitor_frame = tabview.tab("Monitor")
             # Clipboard monitoring toggle
             clipboard_monitor_var = tk.BooleanVar(value=self.monitor_clipboard_enabled)
             clipboard_monitor_check = CTkCheckBox(
-                master=general_frame,
+                master=monitor_frame,
                 text="Enable Clipboard Monitoring",
                 variable=clipboard_monitor_var,
                 command=lambda: self.toggle_clipboard_monitoring(clipboard_monitor_var.get()),
@@ -534,9 +534,11 @@ class GUIManager:
                 lambda *args: self.save_setting("monitor_clipboard_enabled", clipboard_monitor_var.get())
             )
 
+            # === qBittorent Tab ===
+            qbittorent_frame = tabview.tab("qBittorent")
             # qBittorrent settings (URL and check connection)
-            self.configure_ctk_label(general_frame, "qBittorrent URL:", pady=(10, 0))
-            qbittorrent_url_entry = CTkEntry(general_frame, width=40, fg_color="black", text_color="white")
+            self.configure_ctk_label(qbittorent_frame, "qBittorrent URL:", pady=(10, 0))
+            qbittorrent_url_entry = CTkEntry(qbittorent_frame, width=40, fg_color="black", text_color="white")
             qbittorrent_url_entry.insert(0, self.qbittorrent_url)
             qbittorrent_url_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
             qbittorrent_url_entry.bind(
@@ -545,18 +547,24 @@ class GUIManager:
             )
 
             check_connection_button = CTkButton(
-                general_frame,
+                qbittorent_frame,
                 text="Check Connection",
                 command=lambda: self.check_qbittorrent_connection(check_connection_button),
                 text_color="white"
             )
             check_connection_button.pack(pady=10)
 
-            # === Directories Tab ===
-            directories_frame = tabview.tab("Directories")
+            delete_login_button = CTkButton(
+                qbittorent_frame,
+                text="Remove Login Information",
+                command=lambda: self.delete_login_cache(),
+                text_color="white"
+            )
+            delete_login_button.pack(pady=10)
+
             # Series Directory entry
-            self.configure_ctk_label(directories_frame, "Series Directory:", pady=(10, 0))
-            series_directory_entry = CTkEntry(directories_frame, width=40, fg_color="black", text_color="white")
+            self.configure_ctk_label(qbittorent_frame, "Series Directory:", pady=(10, 0))
+            series_directory_entry = CTkEntry(qbittorent_frame, width=40, fg_color="black", text_color="white")
             series_directory_entry.insert(0, self.api_client.series_directory)
             series_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
             series_directory_entry.bind(
@@ -565,8 +573,8 @@ class GUIManager:
             )
 
             # Movies Directory entry
-            self.configure_ctk_label(directories_frame, "Movies Directory:", pady=(10, 0))
-            movies_directory_entry = CTkEntry(directories_frame, width=40, fg_color="black", text_color="white")
+            self.configure_ctk_label(qbittorent_frame, "Movies Directory:", pady=(10, 0))
+            movies_directory_entry = CTkEntry(qbittorent_frame, width=40, fg_color="black", text_color="white")
             movies_directory_entry.insert(0, self.api_client.movies_directory)
             movies_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
             movies_directory_entry.bind(
@@ -619,6 +627,14 @@ class GUIManager:
     def save_setting(self, key, value):
         """Save a generic setting."""
         self.cache_manager.save_setting(key, value)
+
+    def delete_login_cache(self):
+        """Delete the qBittorrent credentials from the cache."""
+        files_deleted = self.cache_manager.delete_login_cache()
+        if files_deleted == True:
+            messagebox.showinfo("Login Data Removed", "The qBittorrent login data has been removed.")
+        else:
+            messagebox.showinfo("No Login Data Found", "No qBittorrent login data was found.")
 
     def check_qbittorrent_connection(self, button):
         """Check the connection to the qBittorrent web interface and update the button text."""

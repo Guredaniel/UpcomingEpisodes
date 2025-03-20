@@ -188,48 +188,6 @@ class APIClient:
         except Exception as e:
             raise Exception(f"Failed to open qBittorrent web interface: {e}")
 
-    def search_torrent(self, show_name, episode, site):
-        """
-        Search for a torrent using the provided show name, episode number, and site.
-        Returns the magnet link if found, otherwise returns None.
-        """
-        # Decrement the episode number by 1
-        if episode.startswith("S") and "E" in episode:
-            season, ep_num = episode[1:].split("E")
-            try:
-                ep_num = int(ep_num) - 1
-                if ep_num < 1:
-                    search_query = f"{show_name} S{season}E01"  # Handle edge case for episode 1
-                else:
-                    search_query = f"{show_name} S{season}E{ep_num:02d}"
-            except ValueError:
-                search_query = f"{show_name} {episode}"
-        else:
-            search_query = f"{show_name} {episode}"
-
-        if site == "rutor":
-            search_url = f"https://rutor.info/search/{search_query.replace(' ', '%20')}"
-        elif site == "ext":
-            search_url = f"https://ext.to/browse/?q={search_query.replace(' ', '+')}"
-        elif site == "nyaa":
-            search_url = f"https://nyaa.si/?f=0&c=1_2&q={search_query.replace(' ', '+')}"
-        else:
-            raise ValueError("Unsupported site")
-
-        response = requests.get(search_url, headers=HEADERS)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            magnet_link = None
-            if site == "rutor":
-                magnet_link = soup.find('a', href=True, text='Magnet link')['href']
-            elif site == "ext":
-                magnet_link = soup.find('a', href=True, text='Magnet link')['href']
-            elif site == "nyaa":
-                magnet_link = soup.find('a', href=True, text='Magnet link')['href']
-            return magnet_link
-        else:
-            return None
-
     def check_qbittorrent_connection(self):
         """Check the connection to the qBittorrent web interface."""
         try:
