@@ -1,4 +1,4 @@
-import tkinter as tk
+﻿import tkinter as tk
 from tkinter import messagebox, ttk
 from customtkinter import CTkFrame, CTkLabel, CTkButton, CTkEntry, CTkToplevel, CTkRadioButton, CTkCheckBox
 import webbrowser
@@ -129,10 +129,7 @@ class GUIManager:
         Tooltip(search_ktuvit_button, text="Search for the selected show on ktuvit")
 
         # Add settings button with gear icon
-        settings_icon = PhotoImage(file=r"C:\Users\gured\source\repos\UpcomingEpisodes\UpcomingEpisodes\gear_icon.png")  # Use raw string for the file path
-        settings_icon = settings_icon.subsample(2, 2)  # Make the icon smaller
-        settings_button = tk.Button(self.root, image=settings_icon, command=self.open_settings_window, bg="gray")  # Change background color
-        settings_button.image = settings_icon  # Keep a reference to avoid garbage collection
+        settings_button = tk.Button(self.root, text="⚙️", command=self.open_settings_window, bg="gray", font=("Arial Unicode MS", 15))
         settings_button.place(relx=1.0, rely=0.0, anchor="ne", x=-10, y=10)  # Position the button at the top right
         Tooltip(settings_button, text="Open the settings window")
 
