@@ -37,8 +37,8 @@ jobs:
         run: pyinstaller --onefile UpcomingEpisodes.py
       
       # Upload the .exe as an artifact
-      - name: Upload EXE
-        uses: actions/upload-artifact@v3
+      - name: Upload a Build Artifact
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: UpcomingEpisodes
           path: dist/UpcomingEpisodes.exe
