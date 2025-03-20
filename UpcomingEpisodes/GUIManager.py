@@ -32,7 +32,7 @@ class Tooltip:
         tw.wm_overrideredirect(True)
         tw.wm_geometry(f"+{x}+{y}")
         label = tk.Label(tw, text=self.text, justify=tk.LEFT,
-                         background="#ffffe0", relief=tk.SOLID, borderwidth=1,
+                         background="#ffffff", relief=tk.SOLID, borderwidth=1,
                          font=("Helvetica", "8", "normal"))
         label.pack(ipadx=1)
 
@@ -124,8 +124,12 @@ class GUIManager:
         search_nyaa_button.grid(row=1, column=3, padx=5)
         Tooltip(search_nyaa_button, text="Search for the selected show on Nyaa")
 
+        search_ktuvit_button = CTkButton(control_frame, text="Ktuvit", command=lambda: self.search_selected("ktuvit"))
+        search_ktuvit_button.grid(row=1, column=4, padx=5)
+        Tooltip(search_ktuvit_button, text="Search for the selected show on ktuvit")
+
         # Add settings button with gear icon
-        settings_icon = PhotoImage(file=r"gear_icon.png")  # Use raw string for the file path
+        settings_icon = PhotoImage(file=r"C:\Users\gured\source\repos\UpcomingEpisodes\UpcomingEpisodes\gear_icon.png")  # Use raw string for the file path
         settings_icon = settings_icon.subsample(2, 2)  # Make the icon smaller
         settings_button = tk.Button(self.root, image=settings_icon, command=self.open_settings_window, bg="gray")  # Change background color
         settings_button.image = settings_icon  # Keep a reference to avoid garbage collection
@@ -268,7 +272,7 @@ class GUIManager:
         except Exception as e:
             self.handle_error(f"Failed to open qBittorrent: {e}")
 
-    def search_and_open_url(self, show_name, episode=None, base_url="https://ext.to/browse/?q="):
+    def search_and_open_url(self, show_name, episode=None, base_url="https://ext.to/browse/?q=",quality=None):
         """Search and open URL for the show and previous episode if provided."""
         if episode and episode.startswith("S") and "E" in episode:
             season, ep_num = episode[1:].split("E")
@@ -284,7 +288,7 @@ class GUIManager:
         else:
             query = show_name
         
-        if self.quality_setting_enabled:
+        if self.quality_setting_enabled and quality:
             query += f" {self.video_quality}"
         
         formatted_query = query.replace(" ", "+")
@@ -304,6 +308,8 @@ class GUIManager:
                 self.search_and_open_url(show_name, episode, base_url="https://nyaa.si/?q=")
             elif option == "rutor":
                 self.search_and_open_url(show_name, base_url="https://rutor.info/search/")
+            elif option == "ktuvit":
+                self.search_and_open_url(show_name, quality=None, base_url="https://www.ktuvit.me/Search.aspx?q=")
             else:
                 self.handle_error("Invalid search option selected.")
         except IndexError:
@@ -318,7 +324,7 @@ class GUIManager:
         """
         add_win = CTkToplevel(self.root)
         add_win.title("Add Show")
-        add_win.geometry("610x360")
+        add_win.geometry("450x310")
         add_win.configure(fg_color="black")  # Set background color to black
 
         # Ensure the new window is in the foreground
@@ -409,18 +415,18 @@ class GUIManager:
         self.configure_ctk_button(button_frame, "Add Show", validate_and_add, 0, 0)
         self.configure_ctk_button(button_frame, "Open IMDb Page", open_imdb_from_add, 0, 1)
         
-        # Popular shows section (3 buttons per row)
-        self.configure_ctk_label(add_win, "Latest Popular Shows:", font=("Helvetica", 12, "bold"), pady=(0, 0))
-        popular_shows_frame = CTkFrame(add_win, fg_color="black")
-        popular_shows_frame.pack(padx=0, fill=tk.X)
+        # # Popular shows section (3 buttons per row)
+        # self.configure_ctk_label(add_win, "Latest Popular Shows:", font=("Helvetica", 12, "bold"), pady=(0, 0))
+        # popular_shows_frame = CTkFrame(add_win, fg_color="black")
+        # popular_shows_frame.pack(padx=0, fill=tk.X)
         
-        popular_shows = self.api_client.fetch_latest_shows()  # Ensure you use the latest fetch_latest_shows() function
-        for i, show in enumerate(popular_shows):
-            row = i // 3
-            col = i % 3
-            btn = CTkButton(popular_shows_frame, text=show, text_color="white",
-                            command=lambda s=show: (entry.delete(0, tk.END), entry.insert(0, s)))
-            btn.grid(row=row, column=col, padx=2, pady=2)
+        # popular_shows = self.api_client.fetch_latest_shows()  # Ensure you use the latest fetch_latest_shows() function
+        # for i, show in enumerate(popular_shows):
+        #     row = i // 3
+        #     col = i % 3
+        #     btn = CTkButton(popular_shows_frame, text=show, text_color="white",
+        #                     command=lambda s=show: (entry.delete(0, tk.END), entry.insert(0, s)))
+        #     btn.grid(row=row, column=col, padx=2, pady=2)
 
     def configure_ctk_button(self, parent, text, command, row, column, padx=5, pady=5):
         """Configure a CTkButton with the given parameters."""
