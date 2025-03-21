@@ -1,6 +1,7 @@
 ﻿import tkinter as tk
 from tkinter import messagebox, ttk
-from customtkinter import CTkFrame, CTkLabel, CTkButton, CTkEntry, CTkToplevel, CTkRadioButton, CTkCheckBox, CTkTabview
+import customtkinter
+from customtkinter import CTkFrame, CTkLabel, CTkButton, CTkEntry, CTkToplevel, CTkRadioButton, CTkCheckBox, CTkTabview, CTkScrollableFrame, CTkComboBox
 import webbrowser
 import os
 import pyperclip
@@ -50,17 +51,32 @@ class GUIManager:
         self.cache_manager = cache_manager
         self.watchlist_manager = watchlist_manager
         self.api_client = api_client
-        self.monitor_clipboard_enabled = self.cache_manager.load_setting("monitor_clipboard_enabled", True)  # Load setting from cache
-        self.qbittorrent_url = self.cache_manager.load_setting("qbittorrent_url", "http://192.168.1.113:8080/")  # Load setting from cache
-        self.video_quality = self.cache_manager.load_setting("video_quality", "1080p")  # Load setting from cache
-        self.quality_setting_enabled = self.cache_manager.load_setting("quality_setting_enabled", True)  # Load setting from cache
+        self.monitor_clipboard_enabled = self.cache_manager.load_setting("monitor_clipboard_enabled", True)
+        self.qbittorrent_url = self.cache_manager.load_setting("qbittorrent_url", "http://192.168.1.113:8080/")
+        self.video_quality = self.cache_manager.load_setting("video_quality", "1080p")
+        self.quality_setting_enabled = self.cache_manager.load_setting("quality_setting_enabled", True)
+
+        self.color_theme = self.cache_manager.load_setting("color_theme", "blue")
+        customtkinter.set_default_color_theme(self.color_theme)
+        
+        # New properties for box-based UI
+        self.selected_box = None  # Currently selected show
+        self.boxes = {}  # Dictionary to store references to show boxes by name
+        self.show_data = []  # List to store show data
+
         self.setup_gui()
         self.settings_window = None
 
+        # Initialize last_magnet_url
+        self.last_magnet_url = ""
+
+        # Start monitoring the clipboard
+        self.monitor_clipboard()
+
     def setup_gui(self):
-        """Set up the main GUI components."""
+        """Set up the main GUI components with box-based UI."""
         self.root.title("Upcoming Releases Viewer")
-        self.root.geometry("920x450")
+        self.root.geometry("920x550")
 
         # Set up the main frame
         main_frame = CTkFrame(self.root)
@@ -70,20 +86,25 @@ class GUIManager:
         title_label = CTkLabel(main_frame, text="Upcoming Episode Releases", font=("Helvetica", 16, "bold"))
         title_label.pack(pady=10)
 
-        # Set up the treeview with custom styles
-        columns = ("Show", "Episode", "Title", "Air Date")
-        self.upcoming_tree = ttk.Treeview(main_frame, columns=columns, show="headings")
-        for col in columns:
-            self.upcoming_tree.heading(col, text=col)
-            self.upcoming_tree.column(col, width=120 if col != "Title" else 200)
-        self.upcoming_tree.pack(fill=tk.BOTH, expand=True)
+        # Create a scrollable frame for show boxes instead of treeview
+        self.scrollable_frame = CTkScrollableFrame(
+            main_frame,
+            fg_color="transparent",
+            corner_radius=10,
+            scrollbar_button_color="gray40",
+            scrollbar_button_hover_color="gray30",
+            scrollbar_fg_color="transparent",  # Make scrollbar background transparent
+            orientation="vertical"
+        )
+        self.scrollable_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Apply dark theme styles to the treeview
-        style = ttk.Style()
-        style.theme_use("clam")
-
-        style.configure("Treeview", background="black", foreground="white", fieldbackground="black")
-        style.map('Treeview', background=[('selected', 'grey')], foreground=[('selected', 'white')])
+        # Configure the scrollbar to appear only when needed
+        self.scrollable_frame._scrollbar.configure(command=self.scrollable_frame._parent_canvas.yview)
+        self.scrollable_frame._parent_canvas.configure(
+            yscrollcommand=lambda first, last: self.configure_scrollbar(
+                self.scrollable_frame._scrollbar, first, last
+            )
+        )
 
         # Set up the control frame with buttons
         control_frame = CTkFrame(main_frame)
@@ -133,54 +154,146 @@ class GUIManager:
         settings_button.place(relx=1.0, rely=0.0, anchor="ne", x=-10, y=10) 
         Tooltip(settings_button, text="Open the settings window")
 
-        # Load initial data
+        # Load initial data and create show boxes
         self.refresh_upcoming()
 
-        # Initialize last_magnet_url
-        self.last_magnet_url = ""
-
-        # Start monitoring the clipboard
-        self.monitor_clipboard()
+    def create_show_boxes(self):
+            """Create boxes for all shows in the show_data list."""
+            # Clear existing boxes
+            for widget in self.scrollable_frame.winfo_children():
+                widget.destroy()
+            
+            self.boxes = {}  # Reset boxes dictionary
+            
+            # Create boxes for each show
+            for index, show_info in enumerate(self.show_data):
+                self.create_show_box(show_info, index)
+    
+    def create_show_box(self, show_info, index):
+        """Create a box for a single show in the scrollable frame."""
+        # Calculate grid position (3 boxes per row)
+        row = index // 3
+        col = index % 3
+        
+        # Create box frame
+        box = CTkFrame(
+            master=self.scrollable_frame,
+            width=250,
+            height=180,
+            corner_radius=10,
+            fg_color="gray25",  # Unselected background
+            border_width=2,     # Keep border width constant to avoid shifts
+            border_color="gray40"
+        )
+        box.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+        
+        # Set the cursor once instead of binding to <Enter>
+        box.configure(cursor="hand2")
+        
+        # Store reference to the box
+        show_name = show_info["show"]
+        self.boxes[show_name] = box
+        
+        # Bind the entire box to the click event
+        box.bind("<Button-1>", lambda event, s=show_info: self.select_box(s))
+        
+        # Show name header
+        label_show = CTkLabel(
+            master=box,
+            text=f"{show_info['show']}",
+            font=("Helvetica", 16, "bold")
+        )
+        label_show.pack(anchor="w", padx=10, pady=(10, 2))
+        label_show.bind("<Button-1>", lambda event, s=show_info: self.select_box(s))
+        
+        # Episode label
+        label_episode = CTkLabel(
+            master=box,
+            text=f"Episode: {show_info['episode']}",
+            font=("Helvetica", 12)
+        )
+        label_episode.pack(anchor="w", padx=10, pady=2)
+        label_episode.bind("<Button-1>", lambda event, s=show_info: self.select_box(s))
+        
+        # Title label
+        label_title = CTkLabel(
+            master=box,
+            text=f"Title: {show_info['title']}",
+            font=("Helvetica", 12)
+        )
+        label_title.pack(anchor="w", padx=10, pady=2)
+        label_title.bind("<Button-1>", lambda event, s=show_info: self.select_box(s))
+        
+        # Air Date label
+        label_date = CTkLabel(
+            master=box,
+            text=f"Air Date: {show_info['airdate']}",
+            font=("Helvetica", 12)
+        )
+        label_date.pack(anchor="w", padx=10, pady=(2, 10))
+        label_date.bind("<Button-1>", lambda event, s=show_info: self.select_box(s))
+    
+    def select_box(self, show_info):
+        """Handle selection of a show box."""
+        # Reset previous selection style
+        if self.selected_box and self.selected_box["show"] in self.boxes:
+            prev_box = self.boxes[self.selected_box["show"]]
+            prev_box.configure(fg_color="gray25", border_color="gray40")
+        
+        # Set new selection
+        self.selected_box = show_info
+        
+        # Update the UI to show the selected box
+        if show_info["show"] in self.boxes:
+            current_box = self.boxes[show_info["show"]]
+            current_box.configure(fg_color="gray35", border_color="#1E90FF")
+    
+    def remove_specific_show(self, show_name):
+        """Remove a specific show by name from the watchlist."""
+        self.watchlist_manager.remove_show(show_name)
+        
+        # If we removed the selected show, clear the selection
+        if self.selected_box and self.selected_box["show"] == show_name:
+            self.selected_box = None
+        
+        # Refresh the display
+        self.refresh_upcoming()
 
     def handle_error(self, error_message):
-        """Display an error message to the user and copy it to the clipboard."""
-        pyperclip.copy(error_message)
-        messagebox.showerror("Error", error_message)
+            """Display an error message to the user and copy it to the clipboard."""
+            pyperclip.copy(error_message)
+            messagebox.showerror("Error", error_message)
 
     def refresh_upcoming(self):
         """Refresh the table with the next episode info for each show in the watchlist."""
         def fetch_data():
-            for row in self.upcoming_tree.get_children():
-                self.upcoming_tree.delete(row)
+            # Get show data in a background thread
+            self.show_data = []
             for show in self.watchlist_manager.watchlist:
                 info = self.api_client.get_next_episode(show)
-                self.upcoming_tree.insert("", "end", values=(
-                    info["show"],
-                    info["episode"],
-                    info["title"],
-                    info["airdate"]
-                ))
+                self.show_data.append(info)
+            
+            # Update UI on the main thread
+            self.root.after(0, self.create_show_boxes)
 
         threading.Thread(target=fetch_data).start()
 
     def remove_show(self):
-        """Remove the selected show from the watchlist and delete its cache file."""
-        selected = self.upcoming_tree.selection()
-        if not selected:
+        """Remove the selected show from the watchlist."""
+        if not self.selected_box:
             self.handle_error("Please select a show to remove.")
             return
-        item = self.upcoming_tree.item(selected[0])
-        show_to_remove = item["values"][0]
-        self.watchlist_manager.remove_show(show_to_remove)
-        self.refresh_upcoming()
+        
+        show_to_remove = self.selected_box["show"]
+        self.remove_specific_show(show_to_remove)
 
     def open_imdb(self):
         """Open the IMDb page for the selected show using its IMDb ID."""
-        selected = self.upcoming_tree.selection()
-        if not selected:
+        if not self.selected_box:
             self.handle_error("Please select a show from the list.")
             return
-        show = self.upcoming_tree.item(selected[0])["values"][0]
+            
+        show = self.selected_box["show"]
         info = self.api_client.get_next_episode(show)
         imdb_id = info.get("imdb")
         if imdb_id:
@@ -295,23 +408,23 @@ class GUIManager:
 
     def search_selected(self, option):
         """Search for the selected show based on the given option."""
-        try:
-            selected_item = self.upcoming_tree.selection()[0]
-            values = self.upcoming_tree.item(selected_item)["values"]
-            show_name = values[0]
-            episode = values[1]
-            if option == "ext":
-                self.search_and_open_url(show_name, episode, base_url="https://ext.to/browse/?q=")
-            elif option == "nyaa":
-                self.search_and_open_url(show_name, episode, base_url="https://nyaa.si/?q=")
-            elif option == "rutor":
-                self.search_and_open_url(show_name, base_url="https://rutor.info/search/")
-            elif option == "ktuvit":
-                self.search_and_open_url(show_name, quality=None, base_url="https://www.ktuvit.me/Search.aspx?q=")
-            else:
-                self.handle_error("Invalid search option selected.")
-        except IndexError:
+        if not self.selected_box:
             self.handle_error("Please select a show to search.")
+            return
+            
+        show_name = self.selected_box["show"]
+        episode = self.selected_box["episode"]
+        
+        if option == "ext":
+            self.search_and_open_url(show_name, episode, base_url="https://ext.to/browse/?q=")
+        elif option == "nyaa":
+            self.search_and_open_url(show_name, episode, base_url="https://nyaa.si/?q=")
+        elif option == "rutor":
+            self.search_and_open_url(show_name, base_url="https://rutor.info/search/")
+        elif option == "ktuvit":
+            self.search_and_open_url(show_name, quality=None, base_url="https://www.ktuvit.me/Search.aspx?q=")
+        else:
+            self.handle_error("Invalid search option selected.")
 
     def open_add_show_window(self):
         """
@@ -434,8 +547,8 @@ class GUIManager:
 
     def configure_ctk_label(self, parent, text, font=None, pady=5):
         """Configure a CTkLabel with the given parameters."""
-        label = CTkLabel(parent, text=text, font=font, text_color="white")
-        label.pack(pady=pady)
+        label = CTkLabel(parent, text=text, font=font, text_color="white", anchor="w", justify="left")
+        label.pack(pady=pady, anchor="w", padx=10)
         return label
 
     def configure_radiobutton(self, parent, text, variable, value, command):
@@ -502,7 +615,7 @@ class GUIManager:
             # Create the settings window
             self.settings_win = CTkToplevel(self.root)
             self.settings_win.title("Settings")
-            self.settings_win.geometry("400x450")
+            self.settings_win.geometry("400x400")
             self.settings_win.configure(fg_color="black")
             self.settings_win.protocol("WM_DELETE_WINDOW", self.on_settings_window_close)
             self.settings_win.lift()
@@ -517,6 +630,7 @@ class GUIManager:
             tabview.add("Monitor")
             tabview.add("qBittorent")
             tabview.add("Quality")
+            tabview.add("Appearance")
 
             # === Monitor Tab ===
             monitor_frame = tabview.tab("Monitor")
@@ -539,7 +653,7 @@ class GUIManager:
             qbittorent_frame = tabview.tab("qBittorent")
             # qBittorrent settings (URL and check connection)
             self.configure_ctk_label(qbittorent_frame, "qBittorrent URL:", pady=(10, 0))
-            qbittorrent_url_entry = CTkEntry(qbittorent_frame, width=40, fg_color="black", text_color="white")
+            qbittorrent_url_entry = CTkEntry(qbittorent_frame, width=40, fg_color="gray25", text_color="white")
             qbittorrent_url_entry.insert(0, self.qbittorrent_url)
             qbittorrent_url_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
             qbittorrent_url_entry.bind(
@@ -547,20 +661,34 @@ class GUIManager:
                 lambda event: self.save_qbittorrent_url(qbittorrent_url_entry.get().strip())
             )
 
+            # Create a frame for the connection buttons
+            connection_buttons_frame = CTkFrame(qbittorent_frame)
+            connection_buttons_frame.pack(pady=10)
+
+            # Check Connection button
             check_connection_button = CTkButton(
-                qbittorent_frame,
+                connection_buttons_frame,
                 text="Check Connection",
                 command=lambda: self.check_qbittorrent_connection(check_connection_button),
                 text_color="white"
             )
-            check_connection_button.pack(pady=10)
+            check_connection_button.pack(side="left", padx=5)
+
+            # Open qBittorrent Site button
+            open_site_button = CTkButton(
+                connection_buttons_frame,
+                text="Open Web UI",
+                command=lambda: self.open_qbittorrent_site(),
+                text_color="white"
+            )
+            open_site_button.pack(side="left", padx=5)
 
             login_frame = CTkFrame(qbittorent_frame)
             login_frame.pack(pady=10)  # Add padding as needed
 
             save_login_button = CTkButton(
                 login_frame,
-                text="Enter Login Information",
+                text="Set Credentials",
                 command=lambda: self.prompt_qbittorrent_credentials(magnet=False),
                 text_color="white"
             )
@@ -568,7 +696,7 @@ class GUIManager:
 
             delete_login_button = CTkButton(
                 login_frame,
-                text="Remove Login Information",
+                text="Clear Credentials",
                 command=lambda: self.delete_login_cache(),
                 text_color="white"
             )
@@ -576,7 +704,7 @@ class GUIManager:
 
             # Series Directory entry
             self.configure_ctk_label(qbittorent_frame, "Series Directory:", pady=(10, 0))
-            series_directory_entry = CTkEntry(qbittorent_frame, width=40, fg_color="black", text_color="white")
+            series_directory_entry = CTkEntry(qbittorent_frame, width=40, fg_color="gray25", text_color="white")
             series_directory_entry.insert(0, self.api_client.series_directory)
             series_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
             series_directory_entry.bind(
@@ -586,7 +714,7 @@ class GUIManager:
 
             # Movies Directory entry
             self.configure_ctk_label(qbittorent_frame, "Movies Directory:", pady=(10, 0))
-            movies_directory_entry = CTkEntry(qbittorent_frame, width=40, fg_color="black", text_color="white")
+            movies_directory_entry = CTkEntry(qbittorent_frame, width=40, fg_color="gray25", text_color="white")
             movies_directory_entry.insert(0, self.api_client.movies_directory)
             movies_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
             movies_directory_entry.bind(
@@ -610,15 +738,44 @@ class GUIManager:
                 lambda *args: self.save_setting("quality_setting_enabled", quality_setting_var.get())
             )
 
-            # Video quality selection menu
+            # Video quality selection using CTkComboBox
             self.configure_ctk_label(quality_frame, "Select Video Quality:", pady=(10, 0))
-            quality_var = tk.StringVar(value=self.video_quality)
             quality_options = ["480p", "720p", "1080p", "2160p"]
-            quality_menu = ttk.OptionMenu(quality_frame, quality_var, self.video_quality, *quality_options)
-            quality_menu.pack(pady=(0, 10), padx=10, fill=tk.X)
-            quality_var.trace_add("write", lambda *args: self.save_setting("video_quality", quality_var.get()))
+            quality_combobox = CTkComboBox(
+                quality_frame,
+                values=quality_options,
+                command=lambda choice: self.save_setting("video_quality", choice),
+                width=200,
+                text_color="white",
+                fg_color="gray25",
+                dropdown_fg_color="gray25",
+                dropdown_text_color="white",
+                dropdown_hover_color="gray35"
+            )
+            quality_combobox.pack(pady=(0, 10), padx=10)
+            quality_combobox.set(self.video_quality)
 
-            # Additional tabs or settings options can be added here as needed
+             # === Appearance Tab ===
+            appearance_frame = tabview.tab("Appearance")
+            
+            # Color Theme Settings
+            self.configure_ctk_label(appearance_frame, "Color Theme:", pady=(10, 0))
+            
+            # Create a combobox for color theme selection
+            theme_values = ["blue", "green", "dark-blue"]
+            theme_combobox = CTkComboBox(
+                appearance_frame,
+                values=theme_values,
+                command=self.change_color_theme,
+                width=200,
+                text_color="white",
+                fg_color="gray25",
+                dropdown_fg_color="gray25",
+                dropdown_text_color="white",
+                dropdown_hover_color="gray35"
+            )
+            theme_combobox.pack(pady=0)
+            theme_combobox.set(self.color_theme)
 
     def save_qbittorrent_url(self, url):
         """Save the qBittorrent URL setting."""
@@ -670,21 +827,32 @@ class GUIManager:
             self.root.after_cancel(self.clipboard_monitor_id)
 
     def monitor_clipboard(self):
-        """Monitor the clipboard for magnet URLs and prompt the user to send them to qBittorrent."""
-        if not self.monitor_clipboard_enabled:
-            return
-        try:
-            clipboard_content = pyperclip.paste()
-            if (clipboard_content.startswith("magnet:") and clipboard_content != self.last_magnet_url):
-                self.last_magnet_url = clipboard_content
-                self.open_qbittorrent_with_magnet(clipboard_content, from_clipboard=True)
-        except pyperclip.PyperclipException as e:
-            self.handle_error(f"Clipboard error: {e}")
-        except Exception as e:
-            self.handle_error(f"Failed to monitor clipboard: {e}")
-        finally:
-            self.clipboard_monitor_id = self.root.after(1000, self.monitor_clipboard)  # Check the clipboard every second
+        """Monitor the clipboard for magnet links."""
+        if hasattr(self, 'monitor_job'):
+            self.root.after_cancel(self.monitor_job)
+        
+        if self.monitor_clipboard_enabled:
+            try:
+                current_clipboard = pyperclip.paste()
+                if current_clipboard.startswith("magnet:") and current_clipboard != self.last_magnet_url:
+                    self.last_magnet_url = current_clipboard
+                    self.open_qbittorrent_with_magnet(current_clipboard, from_clipboard=True)
+            except Exception:
+                pass
+            
+            # Check clipboard every 2 seconds
+            self.monitor_job = self.root.after(2000, self.monitor_clipboard)
 
+    def configure_scrollbar(self, scrollbar, first, last):
+        """Configure scrollbar to be visible only when needed."""
+        scrollbar.set(first, last)
+        
+        # Show scrollbar only if not viewing the entire content (when the view doesn't represent 100%)
+        if float(last) - float(first) < 0.999:
+            scrollbar.grid()
+        else:
+            scrollbar.grid_remove()
+            
     def send_to_qbittorrent(self):
         """Send the magnet URL from the clipboard to the qBittorrent web interface with authentication."""
         try:
@@ -695,3 +863,17 @@ class GUIManager:
             self.open_qbittorrent_with_magnet(magnet_url)
         except Exception as e:
             self.handle_error(f"Failed to open qBittorrent: {e}")
+            
+    def open_qbittorrent_site(self):
+        """Open the qBittorrent web interface in the default browser."""
+        try:
+            webbrowser.open(self.qbittorrent_url)
+        except Exception as e:
+            self.handle_error(f"Failed to open qBittorrent web interface: {e}")
+
+    def change_color_theme(self, theme):
+        """Change the color theme and save the setting."""
+        self.color_theme = theme
+        self.save_setting("color_theme", theme)
+        customtkinter.set_default_color_theme(theme)
+        messagebox.showinfo("Settings Applied", "Appearance settings have been applied. Some changes may require restarting the application to take full effect.")
