@@ -33,20 +33,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller customtkinter pyperclip requests beautifulsoup4 cryptography
-      - name: Build Exec (Onefile + Windowed)
+      - name: Build Exec (Onefile)
         run: pyinstaller --paths=src --onefile --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient --hidden-import=WatchlistManager src/UpcomingEpisodes.py
       
       - name: Build Exec (Without Onefile)
         run: pyinstaller --paths=src --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient --hidden-import=WatchlistManager src/UpcomingEpisodes.py
      
-      # Create ZIP package containing both builds
-      - name: Create ZIP Package
-        run: |
-          pwsh -Command "Compress-Archive -Path 'dist\UpcomingEpisodes.exe','dist\UpcomingEpisodes' -DestinationPath 'dist\UpcomingEpisodes.zip'"
-
-      # Upload the ZIP as a build artifact
+      # Upload both builds as a single artifact
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4.6.2
         with:
           name: UpcomingEpisodes
-          path: dist/UpcomingEpisodes.zip
+          path: |
+            dist/UpcomingEpisodes.exe
+            dist/UpcomingEpisodes
