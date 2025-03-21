@@ -1,5 +1,5 @@
 ﻿import tkinter as tk
-from tkinter import YES, messagebox, ttk
+from tkinter import messagebox, ttk
 from customtkinter import CTkFrame, CTkLabel, CTkButton, CTkEntry, CTkToplevel, CTkRadioButton, CTkCheckBox, CTkTabview
 import webbrowser
 import os
@@ -129,8 +129,8 @@ class GUIManager:
         Tooltip(search_ktuvit_button, text="Search for the selected show on ktuvit")
 
         # Add settings button with gear icon
-        settings_button = tk.Button(self.root, text="⚙️", command=self.open_settings_window, bg="gray", font=("Arial Unicode MS", 15))
-        settings_button.place(relx=1.0, rely=0.0, anchor="ne", x=-10, y=10)  # Position the button at the top right
+        settings_button = CTkButton(self.root, text="⚙️", command=self.open_settings_window, fg_color="gray",text_color="white", font=("Arial Unicode MS", 15), width=50, height=30)
+        settings_button.place(relx=1.0, rely=0.0, anchor="ne", x=-10, y=10) 
         Tooltip(settings_button, text="Open the settings window")
 
         # Load initial data
@@ -654,9 +654,9 @@ class GUIManager:
             button.configure(text="Testing...")
             success, message = self.api_client.check_qbittorrent_connection()
             if success:
-                button.configure(text="Connection Successful")
+                button.configure(text="Connection Successful", fg_color="green", hover_color="darkgreen")
             else:
-                button.configure(text="Connection Failed")
+                button.configure(text="Connection Failed", fg_color="red", hover_color="darkred")
 
         threading.Thread(target=run_check).start()
 
