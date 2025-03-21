@@ -39,9 +39,14 @@ jobs:
       - name: Build Exec (Without Onefile)
         run: pyinstaller --paths=src --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient --hidden-import=WatchlistManager src/UpcomingEpisodes.py
      
-      # Upload the .exe as an artifact
-      - name: Upload a Build Artifact
+      # Create ZIP package containing both builds
+      - name: Create ZIP Package
+        run: |
+          pwsh -Command "Compress-Archive -Path 'dist\UpcomingEpisodes.exe','dist\UpcomingEpisodes' -DestinationPath 'dist\UpcomingEpisodes.zip'"
+
+      # Upload the ZIP as a build artifact
+      - name: Upload Build Artifact
         uses: actions/upload-artifact@v4.6.2
         with:
           name: UpcomingEpisodes
-          path: dist/UpcomingEpisodes.exe
+          path: dist/UpcomingEpisodes.zip

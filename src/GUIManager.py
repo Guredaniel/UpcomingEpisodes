@@ -63,6 +63,10 @@ class GUIManager:
         self.selected_box = None  # Currently selected show
         self.boxes = {}  # Dictionary to store references to show boxes by name
         self.show_data = []  # List to store show data
+        
+        # Add variables for debouncing and dynamic column tracking
+        self.current_cols = None
+        self.resize_job = None
 
         self.setup_gui()
         self.settings_window = None
@@ -105,6 +109,9 @@ class GUIManager:
                 self.scrollable_frame._scrollbar, first, last
             )
         )
+        
+        # Bind the window resize event (with debouncing)
+        self.root.bind("<Configure>", self.on_window_resize)
 
         # Set up the control frame with buttons
         control_frame = CTkFrame(main_frame)
@@ -158,24 +165,35 @@ class GUIManager:
         self.refresh_upcoming()
 
     def create_show_boxes(self):
-            """Create boxes for all shows in the show_data list."""
-            # Clear existing boxes
-            for widget in self.scrollable_frame.winfo_children():
-                widget.destroy()
-            
-            self.boxes = {}  # Reset boxes dictionary
-            
-            # Create boxes for each show
-            for index, show_info in enumerate(self.show_data):
-                self.create_show_box(show_info, index)
-    
-    def create_show_box(self, show_info, index):
-        """Create a box for a single show in the scrollable frame."""
-        # Calculate grid position (3 boxes per row)
-        row = index // 3
-        col = index % 3
+        """Create boxes for all shows in the show_data list with a dynamic number of columns."""
+        # Clear existing boxes
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
         
-        # Create box frame
+        self.boxes = {}  # Reset boxes dictionary
+        
+        # Compute dynamic column count based on the current width of the scrollable frame
+        available_width = self.scrollable_frame.winfo_width()
+        box_width = 250  # width of each box in pixels
+        pad = 10         # horizontal padding (sum of left and right)
+        
+        # Default to 3 columns if width is not yet available (initial load)
+        if available_width <= 10:  # Very small width means the widget isn't fully rendered yet
+            dynamic_cols = 3
+        else:
+            dynamic_cols = max(1, available_width // (box_width + pad))
+        
+        self.current_cols = dynamic_cols  # Update current column count
+        
+        # Create boxes for each show using the dynamic column count
+        for index, show_info in enumerate(self.show_data):
+            row = index // dynamic_cols
+            col = index % dynamic_cols
+            self.create_show_box(show_info, row, col)
+    
+    def create_show_box(self, show_info, row, col):
+        """Create a box for a single show in the scrollable frame placed at the specified row and column."""
+        # Create box frame with preset dimensions and style
         box = CTkFrame(
             master=self.scrollable_frame,
             width=250,
@@ -852,6 +870,33 @@ class GUIManager:
             scrollbar.grid()
         else:
             scrollbar.grid_remove()
+    
+    def on_window_resize(self, event=None):
+        """Debounce window resize events so as not to recreate boxes too frequently."""
+        # Only respond to actual size changes of the main window
+        if event and event.widget == self.root:
+            if self.resize_job:
+                self.root.after_cancel(self.resize_job)
+            # Delay the relayout to avoid rapid multiple calls during resizing (250ms debounce)
+            self.resize_job = self.root.after(250, self.relayout)
+    
+    def relayout(self):
+        """Recompute the dynamic columns and update the layout only if needed."""
+        available_width = self.scrollable_frame.winfo_width()
+        box_width = 250  # Must match the box width used in create_show_box
+        pad = 10         # Sum of horizontal paddings
+        
+        # If width is not yet properly rendered, default to 3 columns
+        if available_width <= 10:
+            dynamic_cols = 3
+        else:
+            dynamic_cols = max(1, available_width // (box_width + pad))
+        
+        # Only re-create the boxes if the column count changes
+        if self.current_cols != dynamic_cols:
+            self.current_cols = dynamic_cols
+            # Instead of refreshing data (which may cause flicker), re-layout the existing boxes.
+            self.create_show_boxes()
             
     def send_to_qbittorrent(self):
         """Send the magnet URL from the clipboard to the qBittorrent web interface with authentication."""
