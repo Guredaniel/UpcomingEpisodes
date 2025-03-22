@@ -69,6 +69,7 @@ class CacheManager:
 
     def save_credentials(self, username, password):
         """Save encrypted qBittorrent credentials."""
+        self.key = self.load_or_generate_key()
         cipher_suite = Fernet(self.key)
         encrypted_username = cipher_suite.encrypt(username.encode())
         encrypted_password = cipher_suite.encrypt(password.encode())

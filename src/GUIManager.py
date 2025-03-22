@@ -1,4 +1,5 @@
-﻿import tkinter as tk
+﻿
+import tkinter as tk
 from tkinter import messagebox, ttk
 import customtkinter
 from customtkinter import CTkFrame, CTkLabel, CTkButton, CTkEntry, CTkToplevel, CTkRadioButton, CTkCheckBox, CTkTabview, CTkScrollableFrame, CTkComboBox
@@ -69,7 +70,6 @@ class GUIManager:
         self.resize_job = None
 
         self.setup_gui()
-        self.settings_window = None
 
         # Initialize last_magnet_url
         self.last_magnet_url = ""
@@ -85,6 +85,7 @@ class GUIManager:
         # Set up the main frame
         main_frame = CTkFrame(self.root)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.main_frame = main_frame  # Store a reference to the main frame
 
         # Add a title label with larger font
         title_label = CTkLabel(main_frame, text="Upcoming Episode Releases", font=("Helvetica", 16, "bold"))
@@ -156,13 +157,327 @@ class GUIManager:
         search_ktuvit_button.grid(row=1, column=4, padx=5)
         Tooltip(search_ktuvit_button, text="Search for the selected show on ktuvit")
 
-        # Add settings button with gear icon
-        settings_button = CTkButton(self.root, text="⚙️", command=self.open_settings_window, fg_color="gray",text_color="white", font=("Arial Unicode MS", 15), width=50, height=30)
-        settings_button.place(relx=1.0, rely=0.0, anchor="ne", x=-10, y=10) 
-        Tooltip(settings_button, text="Open the settings window")
+        # Add hamburger menu button (moved to top left)
+        settings_button = CTkButton(
+            self.root, 
+            text="⚙️", 
+            command=self.toggle_settings_panel, 
+            fg_color="gray",
+            text_color="white", 
+            font=("Arial Unicode MS", 15), 
+            width=50, 
+            height=30
+        )
+        settings_button.place(relx=0.0, rely=0.0, anchor="nw", x=10, y=10) 
+        Tooltip(settings_button, text="Toggle settings panel")
+
+        # Create settings panel (initially hidden)
+        self.create_settings_panel()
 
         # Load initial data and create show boxes
         self.refresh_upcoming()
+
+
+    def toggle_settings_panel(self):
+        """Toggle the settings panel open/closed state."""
+        if self.is_settings_open:
+            self.close_settings_panel()
+        else:
+            self.open_settings_panel()
+
+    def open_settings_panel(self):
+        """Open the settings panel by sliding it in from the right as an overlay."""
+        if not self.is_settings_open:
+            # Determine the panel size (half of the window width)
+            window_width = self.root.winfo_width()
+            panel_width = window_width // 2
+            
+            # Position the panel
+            self.settings_panel.configure(width=panel_width)
+            self.settings_panel.place(
+                relx=0.0,  # Right edge of window
+                rely=0.0,  # Top of window
+                relwidth=0.5,  # Half the width of window
+                relheight=1.0,  # Full height
+                anchor="nw"  # Anchor to northeast (top-right)
+            )
+            
+            # Make panel visible
+            self.settings_panel.lift()  # Bring to front
+            self.is_settings_open = True
+            
+            # Bind a click event to the root window to detect clicks outside the panel
+            self.root.bind("<Button-1>", self.check_outside_click)
+
+    def close_settings_panel(self):
+        """Close the settings panel by removing it."""
+        if self.is_settings_open:
+            self.settings_panel.place_forget()
+            self.is_settings_open = False
+            
+            # Unbind the click event when the panel is closed
+            self.root.unbind("<Button-1>")
+
+    def create_settings_panel(self):
+        """Create the settings panel that will overlay the main content."""
+        # Create the settings panel as a floating frame
+        self.settings_panel = CTkFrame(
+            self.root,
+            fg_color="#1A1A1A",
+            corner_radius=10,
+            border_width=1,
+            border_color="#333333"
+        )
+        
+        # Initialize panel state
+        self.is_settings_open = False
+        
+        # Set up the settings panel content
+        self.setup_settings_panel()
+
+    def setup_settings_panel(self):
+        """Set up the settings panel content with tabs."""
+        # Create a close button at the top right
+        close_button = CTkButton(
+            self.settings_panel,
+            text="⬅️⚙️",
+            command=self.close_settings_panel,
+            text_color="white",
+            font=("Arial", 14),
+            width=30,
+            height=30,
+            fg_color="#1A1A1A",
+            hover_color="#333333"
+        )
+        close_button.place(relx=1.0, rely=0.0, anchor="ne", x=-10, y=10)
+        
+        # Settings title
+        settings_title = CTkLabel(
+            self.settings_panel,
+            text="Settings",
+            font=("Helvetica", 16, "bold"),
+            text_color="white"
+        )
+        settings_title.pack(pady=(20, 15), padx=10)
+        
+        # Create tabview for settings categories
+        self.settings_tabview = CTkTabview(
+            self.settings_panel,
+            fg_color="#1A1A1A",
+            segmented_button_fg_color="gray25",
+            segmented_button_selected_color="#3E3E3E",
+            segmented_button_unselected_color="gray25",
+            text_color="white"
+        )
+        self.settings_tabview.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Add tabs to the tabview
+        self.settings_tabview.add("General")
+        self.settings_tabview.add("qBittorrent")
+        self.settings_tabview.add("Appearance")
+        self.settings_tabview.set("General")  # Default to general tab
+        
+        # Configure each tab
+        self.setup_general_tab()
+        self.setup_qbittorrent_tab()
+        self.setup_appearance_tab()
+
+    def animate_settings_panel(self, current_width, target_width, opening=True, steps=10):
+        """Animate the opening or closing of the settings panel."""
+        if (opening and current_width >= target_width) or (not opening and current_width <= 0):
+            # Animation complete
+            if not opening:
+                # If closing, remove the panel from view once animation is complete
+                self.settings_panel.pack_forget()
+            return
+        
+        # Calculate the step size
+        step = (target_width - current_width) // steps
+        if step == 0:
+            step = 1 if opening else -1
+        
+        # Update the width
+        new_width = current_width + step
+        self.settings_panel.configure(width=new_width)
+        
+        # Schedule the next frame
+        self.root.after(10, lambda: self.animate_settings_panel(
+            new_width, target_width, opening, steps
+        ))
+
+    def setup_general_tab(self):
+        """Set up the general settings tab."""
+        tab = self.settings_tabview.tab("General")
+        
+        # Monitor clipboard setting
+        clipboard_var = tk.BooleanVar(value=self.monitor_clipboard_enabled)
+        clipboard_check = CTkCheckBox(
+            tab,
+            text="Monitor clipboard for magnet links",
+            variable=clipboard_var,
+            onvalue=True,
+            offvalue=False,
+            text_color="white",
+            command=lambda: self.update_setting("monitor_clipboard_enabled", clipboard_var.get())
+        )
+        clipboard_check.pack(anchor="w", padx=10, pady=10)
+        
+        # Quality settings
+        quality_frame = CTkFrame(tab, fg_color="transparent")
+        quality_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        quality_enable_var = tk.BooleanVar(value=self.quality_setting_enabled)
+        quality_check = CTkCheckBox(
+            quality_frame,
+            text="Enable quality filter for searches",
+            variable=quality_enable_var,
+            onvalue=True,
+            offvalue=False,
+            text_color="white",
+            command=lambda: self.update_setting("quality_setting_enabled", quality_enable_var.get())
+        )
+        quality_check.pack(anchor="w")
+        
+        quality_label = CTkLabel(quality_frame, text="Preferred quality:", text_color="white")
+        quality_label.pack(anchor="w", pady=(10, 0))
+        
+        quality_options = ["720p", "1080p", "2160p", "4K"]
+        quality_var = StringVar(value=self.video_quality)
+        quality_dropdown = CTkComboBox(
+            quality_frame,
+            width=200,
+            values=quality_options,
+            variable=quality_var,
+            state="readonly",
+            fg_color="gray25",
+            button_color="gray25",
+            button_hover_color="gray35",
+            text_color="white",
+            dropdown_fg_color="gray25",
+            dropdown_hover_color="gray35",
+            dropdown_text_color="white",
+            command=lambda value: self.update_setting("video_quality", value)
+        )
+        quality_dropdown.pack(pady=(0, 10), padx=10)
+
+    def setup_qbittorrent_tab(self):
+        """Set up the qBittorrent settings tab."""
+        tab = self.settings_tabview.tab("qBittorrent")
+        
+        # qBittorrent settings (URL and check connection)
+        self.configure_ctk_label(tab, "qBittorrent Web URL:", pady=(10, 0))
+        qbittorrent_url_entry = CTkEntry(tab, width=40, fg_color="gray25", text_color="white")
+        qbittorrent_url_entry.insert(0, self.qbittorrent_url)
+        qbittorrent_url_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
+        qbittorrent_url_entry.bind(
+            "<FocusOut>",
+            lambda event: self.save_qbittorrent_url(qbittorrent_url_entry.get().strip())
+        )
+
+        # Create a frame for the connection buttons
+        connection_buttons_frame = CTkFrame(tab, fg_color="transparent")
+        connection_buttons_frame.pack(pady=10)
+
+        # Check Connection button
+        check_connection_button = CTkButton(
+            connection_buttons_frame,
+            text="Check Connection",
+            command=lambda: self.check_qbittorrent_connection(check_connection_button),
+            text_color="white"
+        )
+        check_connection_button.pack(side="left", padx=5)
+
+        # Open qBittorrent Site button
+        open_site_button = CTkButton(
+            connection_buttons_frame,
+            text="Open Web UI",
+            command=lambda: self.open_qbittorrent_site(),
+            text_color="white"
+        )
+        open_site_button.pack(side="left", padx=5)
+
+        login_frame = CTkFrame(tab, fg_color="transparent")
+        login_frame.pack(pady=10)
+
+        save_login_button = CTkButton(
+            login_frame,
+            text="Set Credentials",
+            command=lambda: self.prompt_qbittorrent_credentials(magnet=False),
+            text_color="white"
+        )
+        save_login_button.pack(side="left", padx=5)
+
+        delete_login_button = CTkButton(
+            login_frame,
+            text="Clear Credentials",
+            command=lambda: self.delete_login_cache(),
+            text_color="white"
+        )
+        delete_login_button.pack(side="left", padx=5)
+
+        # Series Directory entry
+        self.configure_ctk_label(tab, "Series Directory:", pady=(10, 0))
+        series_directory_entry = CTkEntry(tab, width=40, fg_color="gray25", text_color="white")
+        series_directory_entry.insert(0, self.api_client.series_directory)
+        series_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
+        series_directory_entry.bind(
+            "<FocusOut>",
+            lambda event: self.save_series_directory(series_directory_entry.get().strip())
+        )
+
+        # Movies Directory entry
+        self.configure_ctk_label(tab, "Movies Directory:", pady=(10, 0))
+        movies_directory_entry = CTkEntry(tab, width=40, fg_color="gray25", text_color="white")
+        movies_directory_entry.insert(0, self.api_client.movies_directory)
+        movies_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
+        movies_directory_entry.bind(
+            "<FocusOut>",
+            lambda event: self.save_movies_directory(movies_directory_entry.get().strip())
+        )
+
+    def setup_appearance_tab(self):
+        """Set up the appearance settings tab."""
+        tab = self.settings_tabview.tab("Appearance")
+        
+        # Theme selection
+        theme_label = CTkLabel(tab, text="Color Theme:", text_color="white")
+        theme_label.pack(anchor="w", padx=10, pady=(10, 0))
+        
+        theme_frame = CTkFrame(tab, fg_color="transparent")
+        theme_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        theme_var = StringVar(value=self.color_theme)
+        themes = ["blue", "dark-blue", "green"]
+        
+        for i, theme in enumerate(themes):
+            theme_radio = CTkRadioButton(
+                theme_frame,
+                text=theme.capitalize(),
+                variable=theme_var,
+                value=theme,
+                text_color="white",
+                command=lambda t=theme: self.update_theme(t)
+            )
+            theme_radio.pack(anchor="w", pady=5)
+
+    def update_setting(self, setting_name, value):
+        """Update a setting and save it to the cache."""
+        setattr(self, setting_name, value)
+        self.cache_manager.save_setting(setting_name, value)
+        
+        # Special handling for quality filter checkbox
+        if setting_name == "quality_setting_enabled":
+            # If we're in the settings panel and the quality dropdown exists
+            if hasattr(self, 'settings_tabview') and self.is_settings_open:
+                # Find the quality dropdown in the General tab
+                general_tab = self.settings_tabview.tab("General")
+                for frame in general_tab.winfo_children():
+                    if isinstance(frame, CTkFrame):
+                        for widget in frame.winfo_children():
+                            if isinstance(widget, CTkComboBox):
+                                # Enable/disable the quality dropdown based on checkbox state
+                                widget.configure(state="normal" if value else "disabled")
+                                break
 
     def create_show_boxes(self):
         """Create boxes for all shows in the show_data list with a dynamic number of columns."""
@@ -283,7 +598,7 @@ class GUIManager:
             messagebox.showerror("Error", error_message)
 
     def refresh_upcoming(self):
-        """Refresh the table with the next episode info for each show in the watchlist."""
+        """Refresh the box with the next episode info for each show in the watchlist."""
         def fetch_data():
             # Get show data in a background thread
             self.show_data = []
@@ -369,7 +684,7 @@ class GUIManager:
             def on_select(option):
                 is_series = (option == "Series")
                 self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
-                prompt_win.destroy()
+                prompt_win.destroy() 
 
             prompt_win = CTkToplevel(self.root)
             prompt_win.title("Select Content Type")
@@ -401,7 +716,7 @@ class GUIManager:
         except Exception as e:
             self.handle_error(f"Failed to open qBittorrent: {e}")
 
-    def search_and_open_url(self, show_name, episode=None, base_url="https://ext.to/browse/?q=",quality=None):
+    def search_and_open_url(self, show_name, episode=None, base_url="https://ext.to/browse/?q=",quality=True):
         """Search and open URL for the show and previous episode if provided."""
         if episode and episode.startswith("S") and "E" in episode:
             season, ep_num = episode[1:].split("E")
@@ -440,7 +755,7 @@ class GUIManager:
         elif option == "rutor":
             self.search_and_open_url(show_name, base_url="https://rutor.info/search/")
         elif option == "ktuvit":
-            self.search_and_open_url(show_name, quality=None, base_url="https://www.ktuvit.me/Search.aspx?q=")
+            self.search_and_open_url(show_name, quality=False, base_url="https://www.ktuvit.me/Search.aspx?q=")
         else:
             self.handle_error("Invalid search option selected.")
 
@@ -616,185 +931,6 @@ class GUIManager:
         """Close the autocomplete listbox when clicking anywhere in the add show window."""
         autocomplete_listbox.place_forget()
 
-    def on_settings_window_close(self):
-        # Reset the settings_window reference when the window is closed
-        if hasattr(self, 'settings_win') and self.settings_win:
-            self.settings_win.destroy()  # Close the settings window
-            self.settings_win = None  # Reset the reference
-
-
-    def open_settings_window(self):
-        """Open the settings window with a tabbed interface."""
-        if hasattr(self, 'settings_win') and self.settings_win and self.settings_win.winfo_exists():
-            # If the window already exists, bring it to the foreground
-            self.settings_win.lift()
-            self.settings_win.focus_force()
-        else:
-            # Create the settings window
-            self.settings_win = CTkToplevel(self.root)
-            self.settings_win.title("Settings")
-            self.settings_win.geometry("400x400")
-            self.settings_win.configure(fg_color="black")
-            self.settings_win.protocol("WM_DELETE_WINDOW", self.on_settings_window_close)
-            self.settings_win.lift()
-            self.settings_win.focus_force()
-            self.settings_win.transient(self.root)
-
-            # Create a CTkTabview to organize settings into tabs
-            tabview = CTkTabview(self.settings_win, width=380, height=480)
-            tabview.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
-
-            # Add tabs for grouping settings
-            tabview.add("Monitor")
-            tabview.add("qBittorent")
-            tabview.add("Quality")
-            tabview.add("Appearance")
-
-            # === Monitor Tab ===
-            monitor_frame = tabview.tab("Monitor")
-            # Clipboard monitoring toggle
-            clipboard_monitor_var = tk.BooleanVar(value=self.monitor_clipboard_enabled)
-            clipboard_monitor_check = CTkCheckBox(
-                master=monitor_frame,
-                text="Enable Clipboard Monitoring",
-                variable=clipboard_monitor_var,
-                command=lambda: self.toggle_clipboard_monitoring(clipboard_monitor_var.get()),
-                text_color="white"
-            )
-            clipboard_monitor_check.pack(pady=10, padx=10, anchor="w")
-            clipboard_monitor_var.trace_add(
-                "write",
-                lambda *args: self.save_setting("monitor_clipboard_enabled", clipboard_monitor_var.get())
-            )
-
-            # === qBittorent Tab ===
-            qbittorent_frame = tabview.tab("qBittorent")
-            # qBittorrent settings (URL and check connection)
-            self.configure_ctk_label(qbittorent_frame, "qBittorrent URL:", pady=(10, 0))
-            qbittorrent_url_entry = CTkEntry(qbittorent_frame, width=40, fg_color="gray25", text_color="white")
-            qbittorrent_url_entry.insert(0, self.qbittorrent_url)
-            qbittorrent_url_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
-            qbittorrent_url_entry.bind(
-                "<FocusOut>",
-                lambda event: self.save_qbittorrent_url(qbittorrent_url_entry.get().strip())
-            )
-
-            # Create a frame for the connection buttons
-            connection_buttons_frame = CTkFrame(qbittorent_frame)
-            connection_buttons_frame.pack(pady=10)
-
-            # Check Connection button
-            check_connection_button = CTkButton(
-                connection_buttons_frame,
-                text="Check Connection",
-                command=lambda: self.check_qbittorrent_connection(check_connection_button),
-                text_color="white"
-            )
-            check_connection_button.pack(side="left", padx=5)
-
-            # Open qBittorrent Site button
-            open_site_button = CTkButton(
-                connection_buttons_frame,
-                text="Open Web UI",
-                command=lambda: self.open_qbittorrent_site(),
-                text_color="white"
-            )
-            open_site_button.pack(side="left", padx=5)
-
-            login_frame = CTkFrame(qbittorent_frame)
-            login_frame.pack(pady=10)  # Add padding as needed
-
-            save_login_button = CTkButton(
-                login_frame,
-                text="Set Credentials",
-                command=lambda: self.prompt_qbittorrent_credentials(magnet=False),
-                text_color="white"
-            )
-            save_login_button.pack(side="left", padx=5)
-
-            delete_login_button = CTkButton(
-                login_frame,
-                text="Clear Credentials",
-                command=lambda: self.delete_login_cache(),
-                text_color="white"
-            )
-            delete_login_button.pack(side="left", padx=5)
-
-            # Series Directory entry
-            self.configure_ctk_label(qbittorent_frame, "Series Directory:", pady=(10, 0))
-            series_directory_entry = CTkEntry(qbittorent_frame, width=40, fg_color="gray25", text_color="white")
-            series_directory_entry.insert(0, self.api_client.series_directory)
-            series_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
-            series_directory_entry.bind(
-                "<FocusOut>",
-                lambda event: self.save_series_directory(series_directory_entry.get().strip())
-            )
-
-            # Movies Directory entry
-            self.configure_ctk_label(qbittorent_frame, "Movies Directory:", pady=(10, 0))
-            movies_directory_entry = CTkEntry(qbittorent_frame, width=40, fg_color="gray25", text_color="white")
-            movies_directory_entry.insert(0, self.api_client.movies_directory)
-            movies_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
-            movies_directory_entry.bind(
-                "<FocusOut>",
-                lambda event: self.save_movies_directory(movies_directory_entry.get().strip())
-            )
-
-            # === Quality Tab ===
-            quality_frame = tabview.tab("Quality")
-            # Enable quality setting toggle
-            quality_setting_var = tk.BooleanVar(value=self.quality_setting_enabled)
-            quality_setting_check = CTkCheckBox(
-                quality_frame,
-                text="Enable Quality Setting",
-                variable=quality_setting_var,
-                text_color="white"
-            )
-            quality_setting_check.pack(pady=10, padx=10, anchor="w")
-            quality_setting_var.trace_add(
-                "write",
-                lambda *args: self.save_setting("quality_setting_enabled", quality_setting_var.get())
-            )
-
-            # Video quality selection using CTkComboBox
-            self.configure_ctk_label(quality_frame, "Select Video Quality:", pady=(10, 0))
-            quality_options = ["480p", "720p", "1080p", "2160p"]
-            quality_combobox = CTkComboBox(
-                quality_frame,
-                values=quality_options,
-                command=lambda choice: self.save_setting("video_quality", choice),
-                width=200,
-                text_color="white",
-                fg_color="gray25",
-                dropdown_fg_color="gray25",
-                dropdown_text_color="white",
-                dropdown_hover_color="gray35"
-            )
-            quality_combobox.pack(pady=(0, 10), padx=10)
-            quality_combobox.set(self.video_quality)
-
-             # === Appearance Tab ===
-            appearance_frame = tabview.tab("Appearance")
-            
-            # Color Theme Settings
-            self.configure_ctk_label(appearance_frame, "Color Theme:", pady=(10, 0))
-            
-            # Create a combobox for color theme selection
-            theme_values = ["blue", "green", "dark-blue"]
-            theme_combobox = CTkComboBox(
-                appearance_frame,
-                values=theme_values,
-                command=self.change_color_theme,
-                width=200,
-                text_color="white",
-                fg_color="gray25",
-                dropdown_fg_color="gray25",
-                dropdown_text_color="white",
-                dropdown_hover_color="gray35"
-            )
-            theme_combobox.pack(pady=0)
-            theme_combobox.set(self.color_theme)
-
     def save_qbittorrent_url(self, url):
         """Save the qBittorrent URL setting."""
         self.qbittorrent_url = url
@@ -916,9 +1052,33 @@ class GUIManager:
         except Exception as e:
             self.handle_error(f"Failed to open qBittorrent web interface: {e}")
 
-    def change_color_theme(self, theme):
-        """Change the color theme and save the setting."""
+    def update_theme(self, theme):
+        """Update the color theme and apply it."""
         self.color_theme = theme
-        self.save_setting("color_theme", theme)
+        self.cache_manager.save_setting("color_theme", theme)
         customtkinter.set_default_color_theme(theme)
-        messagebox.showinfo("Settings Applied", "Appearance settings have been applied. Some changes may require restarting the application to take full effect.")
+        # Show a message that a restart is required for the theme to fully apply
+        messagebox.showinfo("Theme Changed", "Please restart the application for the theme change to fully take effect.")
+
+    def clear_qbittorrent_credentials(self):
+        """Clear saved qBittorrent credentials."""
+        self.cache_manager.clear_credentials()
+        messagebox.showinfo("Credentials Cleared", "qBittorrent credentials have been cleared.")
+        
+    def check_outside_click(self, event):
+        """Check if a click occurred outside the settings panel."""
+        if self.is_settings_open:
+            # Get panel coordinates
+            panel_x = self.settings_panel.winfo_rootx()
+            panel_y = self.settings_panel.winfo_rooty()
+            panel_width = self.settings_panel.winfo_width()
+            panel_height = self.settings_panel.winfo_height()
+            
+            # Check if click is outside the panel boundaries
+            if (event.x_root < panel_x or 
+                event.x_root > panel_x + panel_width or 
+                event.y_root < panel_y or 
+                event.y_root > panel_y + panel_height):
+                
+                # Click is outside, close the panel
+                self.close_settings_panel()
