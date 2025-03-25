@@ -122,7 +122,7 @@ class GUIManager:
         refresh_button.grid(row=0, column=0, padx=5)
         Tooltip(refresh_button, text="Refresh the list of upcoming episodes")
 
-        add_show_button = CTkButton(control_frame, text="Add Show", command=lambda: self.open_add_show_window())
+        add_show_button = CTkButton(control_frame, text="Add Show", command=lambda: self.toggle_add_show_panel())
         add_show_button.grid(row=0, column=1, padx=5)
         Tooltip(add_show_button, text="Add a new show to the watchlist")
 
@@ -173,6 +173,7 @@ class GUIManager:
 
         # Create settings panel (initially hidden)
         self.create_settings_panel()
+        self.create_add_show_panel()
 
         # Load initial data and create show boxes
         self.refresh_upcoming()
@@ -282,28 +283,321 @@ class GUIManager:
         self.setup_qbittorrent_tab()
         self.setup_appearance_tab()
 
-    def animate_settings_panel(self, current_width, target_width, opening=True, steps=10):
-        """Animate the opening or closing of the settings panel."""
-        if (opening and current_width >= target_width) or (not opening and current_width <= 0):
-            # Animation complete
-            if not opening:
-                # If closing, remove the panel from view once animation is complete
-                self.settings_panel.pack_forget()
+    def toggle_add_show_panel(self):
+        """Toggle the settings panel open/closed state."""
+        if self.is_add_show_open:
+            self.close_add_show_panel()
+        else:
+            self.open_add_show_panel()
+
+    def open_add_show_panel(self):
+        """Open the add_show panel by sliding it in from the left as an overlay."""
+        if not self.is_add_show_open:
+            # Determine the panel size (half of the window width)
+            window_width = self.root.winfo_width()
+            panel_width = window_width // 2
+            
+            # Position the panel at the top of the window
+            self.add_show_panel.configure(width=panel_width)
+            self.add_show_panel.place(
+                relx=0.0,      # Left edge of window
+                rely=0.0,      # Top of window
+                relwidth=0.5,  # Half the width of window
+                relheight=1.0, # Full height
+                anchor="nw"    # Anchor to northwest (top-left)
+            )
+            
+            # Make panel visible and ensure it's on top
+            self.add_show_panel.lift()  # Bring to front
+            self.is_add_show_open = True
+            
+            # Bind a click event to the root window to detect clicks outside the panel
+            self.root.bind("<Button-1>", lambda event: self.check_outside_click(event, widget="add_show"))
+
+
+    def close_add_show_panel(self):
+        """Close the add_show panel by removing it."""
+        if self.is_add_show_open:
+            self.add_show_panel.place_forget()
+            self.is_add_show_open = False
+            
+            # Unbind the click event when the panel is closed
+            self.root.unbind("<Button-1>")
+
+    def create_add_show_panel(self):
+        """Create the add_show panel that will overlay the main content."""
+        # Create the add_show panel as a floating frame
+        self.add_show_panel = CTkFrame(
+            self.root,
+            fg_color="#1A1A1A",
+            corner_radius=10,
+            border_width=1,
+            border_color="#333333"
+        )
+        
+        # Initialize panel state
+        self.is_add_show_open = False
+        
+        # Set up the add_show panel content
+        self.setup_add_show_panel()
+
+    def update_autocomplete_panel(self, event, entry, method_var, autocomplete_listbox, autocomplete_frame):
+        """
+        Enhanced autocomplete method that properly positions and displays the autocomplete listbox.
+        
+        This method performs the following:
+        1. Checks if autocomplete should be active (name method selected and text entered)
+        2. Fetches and displays matching suggestions
+        3. Properly positions the listbox below the entry field
+        4. Ensures the listbox is sized appropriately
+        """
+        # Hide autocomplete when not in "name" mode
+        if method_var.get() != "name":
+            autocomplete_listbox.pack_forget()
             return
+            
+        typed = entry.get().strip()
+        if not typed:
+            autocomplete_listbox.pack_forget()
+            return
+            
+        try:
+            results = self.api_client.search_shows(typed)
+            suggestions = []
+            for item in results:
+                show_name = item.get("show", {}).get("name")
+                if show_name and show_name not in suggestions:
+                    suggestions.append(show_name)
+                    
+            if suggestions:
+                # Clear and populate the listbox
+                autocomplete_listbox.delete(0, tk.END)
+                for suggestion in suggestions:
+                    autocomplete_listbox.insert(tk.END, suggestion)
+                    
+                # Display the listbox
+                autocomplete_listbox.pack(fill=tk.X, expand=True)
+                autocomplete_listbox.configure(width=entry.winfo_width())
+                
+                # Ensure the listbox is visible and in the right position
+                autocomplete_frame.lift()
+                
+                # Adjust height based on item count but with a maximum
+                item_count = min(len(suggestions), 7)  # Show up to 7 items
+                autocomplete_listbox.configure(height=item_count)
+            else:
+                autocomplete_listbox.pack_forget()
+        except Exception as e:
+            # If any error occurs, hide the autocomplete
+            autocomplete_listbox.pack_forget()
+
+    def update_autocomplete_visibility(self, entry, method_var, autocomplete_listbox):
+        """
+        Update the visibility of the autocomplete listbox based on radio button selection.
+        Hide autocomplete when IMDb ID is selected.
+        """
+        if method_var.get() != "name":
+            autocomplete_listbox.pack_forget()
+        else:
+            # Re-trigger autocomplete if there's text and name method is selected
+            typed = entry.get().strip()
+            if typed:
+                self.update_autocomplete(None, entry, method_var, autocomplete_listbox)
+
+    def setup_add_show_panel(self):
+        """Set up the add_show panel content with a better layout."""
+        # Create a close button at the top right
+        close_button = CTkButton(
+            self.add_show_panel,
+            text="⬅️📺",
+            command=self.close_add_show_panel,
+            text_color="white",
+            font=("Arial", 14),
+            width=30,
+            height=30,
+            fg_color="#1A1A1A",
+            hover_color="#333333"
+        )
+        close_button.place(relx=1.0, rely=0.0, anchor="ne", x=-10, y=10)
         
-        # Calculate the step size
-        step = (target_width - current_width) // steps
-        if step == 0:
-            step = 1 if opening else -1
+        # Main content frame to organize the panel elements
+        content_frame = CTkFrame(self.add_show_panel, fg_color="transparent")
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(50, 20))
         
-        # Update the width
-        new_width = current_width + step
-        self.settings_panel.configure(width=new_width)
+        # Add show title at the top of the content
+        add_show_title = CTkLabel(
+            content_frame,
+            text="Add Show to Watchlist",
+            font=("Helvetica", 16, "bold"),
+            text_color="white"
+        )
+        add_show_title.pack(pady=(0, 20))
+
+        # Radio button selection: by name or IMDb ID
+        method_var = tk.StringVar(value="name")
+        rb_frame = CTkFrame(content_frame, fg_color="#1A1A1A")
+        rb_frame.pack(pady=5, fill=tk.X)
         
-        # Schedule the next frame
-        self.root.after(10, lambda: self.animate_settings_panel(
-            new_width, target_width, opening, steps
-        ))
+        method_label = CTkLabel(rb_frame, text="Select method:", text_color="white")
+        method_label.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Radio buttons with consistent styling
+        rb_name = CTkRadioButton(
+            rb_frame,
+            text="Name",
+            variable=method_var,
+            value="name",
+            command=lambda: self.update_autocomplete_visibility(entry, method_var, autocomplete_listbox),
+            text_color="white",
+            fg_color="#3E3E3E",
+            hover_color="#555555"
+        )
+        rb_name.pack(side=tk.LEFT, padx=10)
+        
+        rb_imdb = CTkRadioButton(
+            rb_frame,
+            text="IMDb ID",
+            variable=method_var,
+            value="imdb",
+            command=lambda: self.update_autocomplete_visibility(entry, method_var, autocomplete_listbox),
+            text_color="white",
+            fg_color="#3E3E3E",
+            hover_color="#555555"
+        )
+        rb_imdb.pack(side=tk.LEFT, padx=10)
+
+        # Input section
+        input_frame = CTkFrame(content_frame, fg_color="transparent")
+        input_frame.pack(fill=tk.X, pady=15)
+        
+        input_label = CTkLabel(
+            input_frame, 
+            text="Enter Show Name or IMDb ID:", 
+            text_color="white"
+        )
+        input_label.pack(anchor="w", pady=(0, 5))
+        
+        entry = CTkEntry(
+            input_frame,
+            width=40,
+            fg_color="#333333",
+            text_color="white",
+            border_color="#555555"
+        )
+        entry.pack(fill=tk.X)
+        entry.focus_set()  # Set focus to the entry widget
+
+        # Create a dedicated frame for the autocomplete listbox
+        autocomplete_frame = CTkFrame(content_frame, fg_color="transparent")
+        autocomplete_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # Create the autocomplete listbox with improved styling
+        autocomplete_listbox = tk.Listbox(
+            autocomplete_frame, 
+            fg="white", 
+            bg="#333333", 
+            height=7,
+            width=40,  # Set a proper width
+            selectbackground="#555555",
+            selectforeground="white",
+            font=("Helvetica", 11)  # Set a proper font
+        )
+        # Do not pack the listbox initially - it will be displayed when needed
+
+        # Result message label
+        result_label = CTkLabel(
+            content_frame, 
+            text="", 
+            fg_color="transparent", 
+            text_color="red",
+            height=20  # Fixed height to prevent layout shifts
+        )
+        result_label.pack(pady=5, fill=tk.X)
+
+        # Button section at the bottom
+        button_frame = CTkFrame(content_frame, fg_color="transparent")
+        button_frame.pack(pady=15)
+        
+        # Define helper functions for the buttons
+        def open_imdb_from_add():
+            user_input = entry.get().strip()
+            if not user_input:
+                result_label.configure(text="Enter a show name or IMDb ID first.")
+                return
+            if (method_var.get() == "name"):
+                info = self.api_client.get_next_episode(user_input)
+                imdb_id = info.get("imdb")
+                cache_file = self.cache_manager.get_cache_file_path(user_input)
+            else:
+                imdb_id = user_input
+                cache_file = None
+            if imdb_id:
+                url = "https://www.imdb.com/title/" + imdb_id
+                webbrowser.open(url)
+                if cache_file and os.path.exists(cache_file) and user_input not in self.watchlist_manager.watchlist:
+                    os.remove(cache_file)
+            else:
+                result_label.configure(text="IMDb page not available for the given input.")
+
+        def validate_and_add():
+            user_input = entry.get().strip()
+            if not user_input:
+                result_label.configure(text="Please enter a value.")
+                return
+            if method_var.get() == "name":
+                if user_input in self.watchlist_manager.watchlist:
+                    result_label.configure(text=f"'{user_input}' is already in your watchlist.")
+                    return
+                try:
+                    self.watchlist_manager.add_show(user_input)
+                    self.refresh_upcoming()
+                    self.close_add_show_panel()
+                except ValueError as e:
+                    result_label.configure(text=str(e))
+            else:
+                data = self.api_client.lookup_show_by_imdb(user_input)
+                if data is None:
+                    result_label.configure(text=f"Show with IMDb ID '{user_input}' not found.")
+                    return
+                new_show = data.get("name")
+                if new_show in self.watchlist_manager.watchlist:
+                    result_label.configure(text=f"'{new_show}' is already in your watchlist.")
+                    return
+                self.watchlist_manager.add_show(new_show)
+                self.refresh_upcoming()
+                self.close_add_show_panel()
+        
+        # Styled buttons with consistent coloring
+        add_button = CTkButton(
+            button_frame,
+            text="Add Show",
+            command=validate_and_add,
+            text_color="white",
+            width=120
+        )
+        add_button.pack(side=tk.LEFT, padx=5)
+        
+        imdb_button = CTkButton(
+            button_frame,
+            text="Open IMDb Page",
+            command=open_imdb_from_add,
+            text_color="white",
+            width=120
+        )
+        imdb_button.pack(side=tk.LEFT, padx=5)
+        
+        # Create a new method to update autocomplete with better positioning
+        def update_autocomplete_handler(event):
+            self.update_autocomplete_panel(event, entry, method_var, autocomplete_listbox, autocomplete_frame)
+        
+        # Bind event handlers
+        entry.bind("<KeyRelease>", update_autocomplete_handler)
+        autocomplete_listbox.bind("<<ListboxSelect>>", lambda event: self.on_listbox_select(
+            event, entry, autocomplete_listbox))
+        
+        # Bind click event to close autocomplete listbox
+        self.add_show_panel.bind("<Button-1>", lambda event: self.close_autocomplete(
+            event, autocomplete_listbox))
 
     def setup_general_tab(self):
         """Set up the general settings tab."""
@@ -1064,15 +1358,26 @@ class GUIManager:
         """Clear saved qBittorrent credentials."""
         self.cache_manager.clear_credentials()
         messagebox.showinfo("Credentials Cleared", "qBittorrent credentials have been cleared.")
-        
-    def check_outside_click(self, event):
+            
+    def check_outside_click(self, event, widget="settings"):
         """Check if a click occurred outside the settings panel."""
-        if self.is_settings_open:
+        if widget == "add_show":
+            widget_open = self.is_add_show_open
+            widget_panel = self.add_show_panel
+            widget_close = self.close_add_show_panel
+        elif widget == "settings":
+            widget_open = self.is_settings_open
+            widget_panel = self.settings_panel
+            widget_close = self.close_settings_panel
+        else:
+            return
+
+        if widget_open:
             # Get panel coordinates
-            panel_x = self.settings_panel.winfo_rootx()
-            panel_y = self.settings_panel.winfo_rooty()
-            panel_width = self.settings_panel.winfo_width()
-            panel_height = self.settings_panel.winfo_height()
+            panel_x = widget_panel.winfo_rootx()
+            panel_y = widget_panel.winfo_rooty()
+            panel_width = widget_panel.winfo_width()
+            panel_height = widget_panel.winfo_height()
             
             # Check if click is outside the panel boundaries
             if (event.x_root < panel_x or 
@@ -1081,4 +1386,4 @@ class GUIManager:
                 event.y_root > panel_y + panel_height):
                 
                 # Click is outside, close the panel
-                self.close_settings_panel()
+                widget_close()
