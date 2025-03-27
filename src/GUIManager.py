@@ -68,6 +68,9 @@ class GUIManager:
         # Add variables for debouncing and dynamic column tracking
         self.current_cols = None
         self.resize_job = None
+        
+        # Add error message label (initially hidden)
+        self.error_message_visible = False
 
         self.setup_gui()
 
@@ -114,9 +117,22 @@ class GUIManager:
         # Bind the window resize event (with debouncing)
         self.root.bind("<Configure>", self.on_window_resize)
 
+        # Create error message label above control frame
+        self.error_label = CTkLabel(
+            main_frame,
+            text="",
+            text_color="white",
+            font=("Helvetica", 12),
+            fg_color="#FF5555",  # Red background
+            corner_radius=5,
+            height=0  # Initially collapsed
+        )
+        # Don't pack it yet - we'll display it only when needed
+
         # Set up the control frame with buttons
         control_frame = CTkFrame(main_frame)
         control_frame.pack(pady=10)
+        self.control_frame = control_frame  # Store reference for error message positioning
 
         refresh_button = CTkButton(control_frame, text="Refresh", command=lambda: self.refresh_upcoming())
         refresh_button.grid(row=0, column=0, padx=5)
@@ -341,24 +357,24 @@ class GUIManager:
         # Set up the add_show panel content
         self.setup_add_show_panel()
 
-    def update_autocomplete_panel(self, event, entry, method_var, autocomplete_listbox, autocomplete_frame):
+    def update_autocomplete_panel(self, event, entry, method_var, autocomplete_listbox, parent_frame):
         """
         Enhanced autocomplete method that properly positions and displays the autocomplete listbox.
         
         This method performs the following:
         1. Checks if autocomplete should be active (name method selected and text entered)
         2. Fetches and displays matching suggestions
-        3. Properly positions the listbox below the entry field
+        3. Properly positions the listbox below the entry field using absolute positioning
         4. Ensures the listbox is sized appropriately
         """
         # Hide autocomplete when not in "name" mode
         if method_var.get() != "name":
-            autocomplete_listbox.pack_forget()
+            autocomplete_listbox.place_forget()
             return
             
         typed = entry.get().strip()
         if not typed:
-            autocomplete_listbox.pack_forget()
+            autocomplete_listbox.place_forget()
             return
             
         try:
@@ -375,21 +391,25 @@ class GUIManager:
                 for suggestion in suggestions:
                     autocomplete_listbox.insert(tk.END, suggestion)
                     
-                # Display the listbox
-                autocomplete_listbox.pack(fill=tk.X, expand=True)
-                autocomplete_listbox.configure(width=entry.winfo_width())
+                # Use place for absolute positioning instead of packing
+                autocomplete_listbox.place(
+                    x=0,
+                    y=entry.winfo_height(),  # Position just below the entry with a small gap
+                    width=entry.winfo_width(),    # Same width as the entry
+                    height=min(len(suggestions), 9) * 20 # Height based on number of items (approx 20px per item)
+                )
                 
                 # Ensure the listbox is visible and in the right position
-                autocomplete_frame.lift()
+                parent_frame.lift()
                 
-                # Adjust height based on item count but with a maximum
-                item_count = min(len(suggestions), 7)  # Show up to 7 items
-                autocomplete_listbox.configure(height=item_count)
+                # Adjust width to match entry
+                autocomplete_listbox.configure(width=0)  # Reset width to let place manager handle it
+                
             else:
-                autocomplete_listbox.pack_forget()
+                autocomplete_listbox.place_forget()
         except Exception as e:
             # If any error occurs, hide the autocomplete
-            autocomplete_listbox.pack_forget()
+            autocomplete_listbox.place_forget()
 
     def update_autocomplete_visibility(self, entry, method_var, autocomplete_listbox):
         """
@@ -397,12 +417,14 @@ class GUIManager:
         Hide autocomplete when IMDb ID is selected.
         """
         if method_var.get() != "name":
-            autocomplete_listbox.pack_forget()
+            autocomplete_listbox.place_forget()
         else:
             # Re-trigger autocomplete if there's text and name method is selected
             typed = entry.get().strip()
             if typed:
-                self.update_autocomplete(None, entry, method_var, autocomplete_listbox)
+                # Simulate a key release to trigger the autocomplete
+                event = type('Event', (), {'widget': entry})()
+                self.update_autocomplete_panel(event, entry, method_var, autocomplete_listbox, entry.master)
 
     def setup_add_show_panel(self):
         """Set up the add_show panel content with a better layout."""
@@ -504,25 +526,50 @@ class GUIManager:
         )
         # Do not pack the listbox initially - it will be displayed when needed
 
-        # Result message label
+        # Create a fixed-height frame for result messages that's always visible
+        # This reserves space for messages and prevents layout shifts
+        result_frame = CTkFrame(content_frame, fg_color="transparent", height=30)
+        result_frame.pack(fill=tk.X, pady=5)
+        result_frame.pack_propagate(False)  # Prevent the frame from resizing based on content
+        
+        # Result message label - placed inside the fixed-height frame
         result_label = CTkLabel(
-            content_frame, 
-            text="", 
-            fg_color="transparent", 
-            text_color="red",
-            height=20  # Fixed height to prevent layout shifts
+            result_frame,
+            text="",
+            text_color="white",
+            font=("Helvetica", 12),
+            fg_color="transparent",
+            corner_radius=5,
         )
-        result_label.pack(pady=5, fill=tk.X)
+        result_label.pack(fill=tk.BOTH, expand=True)
+
+        def update_label(text, label=result_label):
+            """
+            Displays a message in the provided label widget without affecting layout.
+            
+            Args:
+                text (str): The message to display
+                label (CTkLabel, optional): The label widget to display the message in.
+                                         Defaults to result_label.
+            """
+            if text:
+                label.configure(text=text, fg_color="#FF5555")
+            else:
+                label.configure(text="", fg_color="transparent")
+            
+            # Optional: Schedule the message to disappear after some time
+            if text:
+                label.after(5000, lambda: label.configure(text="", fg_color="transparent"))
 
         # Button section at the bottom
-        button_frame = CTkFrame(content_frame, fg_color="transparent")
-        button_frame.pack(pady=15)
+        self.button_frame = CTkFrame(content_frame, fg_color="transparent")
+        self.button_frame.pack(pady=15)
         
         # Define helper functions for the buttons
         def open_imdb_from_add():
             user_input = entry.get().strip()
             if not user_input:
-                result_label.configure(text="Enter a show name or IMDb ID first.")
+                update_label(text="Enter a show name or IMDb ID first.")
                 return
             if (method_var.get() == "name"):
                 info = self.api_client.get_next_episode(user_input)
@@ -537,31 +584,31 @@ class GUIManager:
                 if cache_file and os.path.exists(cache_file) and user_input not in self.watchlist_manager.watchlist:
                     os.remove(cache_file)
             else:
-                result_label.configure(text="IMDb page not available for the given input.")
+                update_label(text="IMDb page not available for the given input.")
 
         def validate_and_add():
             user_input = entry.get().strip()
             if not user_input:
-                result_label.configure(text="Please enter a value.")
+                update_label(text="Please enter a value.")
                 return
             if method_var.get() == "name":
                 if user_input in self.watchlist_manager.watchlist:
-                    result_label.configure(text=f"'{user_input}' is already in your watchlist.")
+                    update_label(text=f"'{user_input}' is already in your watchlist.")
                     return
                 try:
                     self.watchlist_manager.add_show(user_input)
                     self.refresh_upcoming()
                     self.close_add_show_panel()
                 except ValueError as e:
-                    result_label.configure(text=str(e))
+                    update_label(text=str(e))
             else:
                 data = self.api_client.lookup_show_by_imdb(user_input)
                 if data is None:
-                    result_label.configure(text=f"Show with IMDb ID '{user_input}' not found.")
+                    update_label(text=f"Show with IMDb ID '{user_input}' not found.")
                     return
                 new_show = data.get("name")
                 if new_show in self.watchlist_manager.watchlist:
-                    result_label.configure(text=f"'{new_show}' is already in your watchlist.")
+                    update_label(text=f"'{new_show}' is already in your watchlist.")
                     return
                 self.watchlist_manager.add_show(new_show)
                 self.refresh_upcoming()
@@ -569,20 +616,18 @@ class GUIManager:
         
         # Styled buttons with consistent coloring
         add_button = CTkButton(
-            button_frame,
+            self.button_frame,
             text="Add Show",
             command=validate_and_add,
             text_color="white",
-            width=120
         )
         add_button.pack(side=tk.LEFT, padx=5)
         
         imdb_button = CTkButton(
-            button_frame,
+            self.button_frame,
             text="Open IMDb Page",
             command=open_imdb_from_add,
-            text_color="white",
-            width=120
+            text_color="white"
         )
         imdb_button.pack(side=tk.LEFT, padx=5)
         
@@ -887,9 +932,22 @@ class GUIManager:
         self.refresh_upcoming()
 
     def handle_error(self, error_message):
-            """Display an error message to the user and copy it to the clipboard."""
-            pyperclip.copy(error_message)
-            messagebox.showerror("Error", error_message)
+        """Display an error message above the buttons."""
+        # Update the error label
+        self.error_label.configure(text="⛔ " + error_message, height=30, width=int(self.main_frame.winfo_width() * 0.5))
+        
+        # Position the error label above the control frame if not already visible
+        if not self.error_message_visible:
+            self.error_label.pack(before=self.control_frame, padx=10, pady=(0, 10))
+            self.error_message_visible = True
+        
+        self.root.after(5000, self.hide_error_message)
+    
+    def hide_error_message(self):
+        """Hide the error message label."""
+        if self.error_message_visible:
+            self.error_label.pack_forget()
+            self.error_message_visible = False
 
     def refresh_upcoming(self):
         """Refresh the box with the next episode info for each show in the watchlist."""
@@ -1053,119 +1111,6 @@ class GUIManager:
         else:
             self.handle_error("Invalid search option selected.")
 
-    def open_add_show_window(self):
-        """
-        Open a larger window to add a new show. You can choose between:
-        - Adding by show name (with auto-complete suggestions), or
-        - Adding by IMDb ID.
-        The input is validated before adding to the persistent watchlist.
-        """
-        add_win = CTkToplevel(self.root)
-        add_win.title("Add Show")
-        add_win.geometry("450x310")
-        add_win.configure(fg_color="black")  # Set background color to black
-
-        # Ensure the new window is in the foreground
-        add_win.lift()
-        add_win.focus_force()
-        add_win.transient(self.root)
-
-        # Radio button selection: by name or IMDb ID.
-        method_var = tk.StringVar(value="name")
-        rb_frame = CTkFrame(add_win, fg_color="black")
-        rb_frame.pack(pady=5, fill=tk.X, padx=10)
-        self.configure_ctk_label(rb_frame, "Select method:", pady=0)
-        self.configure_radiobutton(rb_frame, "Name", method_var, "name", lambda: autocomplete_listbox.pack_forget())
-        self.configure_radiobutton(rb_frame, "IMDb ID", method_var, "imdb", lambda: autocomplete_listbox.pack_forget())
-
-        # Input label and entry.
-        self.configure_ctk_label(add_win, "Enter Show Name or IMDb ID:", pady=(0, 0))
-        entry = CTkEntry(add_win, width=40, fg_color="black", text_color="white")  # Increased width
-        entry.pack(pady=(0, 5), padx=10, fill=tk.X)
-        entry.focus_set()  # Set focus to the entry widget
-
-        # Listbox for auto-complete suggestions (initially hidden).
-        autocomplete_listbox = tk.Listbox(add_win, fg="white", bg="black", height=10, width=50)
-
-        result_label = CTkLabel(add_win, text="", fg_color="black", text_color="red")
-        result_label.pack(pady=0)
-
-        entry.bind("<KeyRelease>", lambda event: self.update_autocomplete(event, entry, method_var, autocomplete_listbox))
-        autocomplete_listbox.bind("<<ListboxSelect>>", lambda event: self.on_listbox_select(event, entry, autocomplete_listbox))
-
-        # Bind click event to close autocomplete listbox
-        add_win.bind("<Button-1>", lambda event: self.close_autocomplete(event, autocomplete_listbox))
-
-        # --- Button to Open IMDb Page in the Add Show Window ---
-        def open_imdb_from_add():
-            user_input = entry.get().strip()
-            if not user_input:
-                result_label.configure(text="Enter a show name or IMDb ID first.")
-                return
-            if (method_var.get() == "name"):
-                info = self.api_client.get_next_episode(user_input)
-                imdb_id = info.get("imdb")
-                cache_file = self.cache_manager.get_cache_file_path(user_input)  # Get the cache file path
-            else:
-                imdb_id = user_input
-                cache_file = None  # No cache file for IMDb ID search
-            if imdb_id:
-                url = "https://www.imdb.com/title/" + imdb_id
-                webbrowser.open(url)
-                if cache_file and os.path.exists(cache_file) and user_input not in self.watchlist_manager.watchlist:
-                    os.remove(cache_file)  # Delete the cache file if it exists and the show is not in the watchlist
-            else:
-                result_label.configure(text="IMDb page not available for the given input.")
-
-        # --- Validate and Add Show ---
-        def validate_and_add():
-            user_input = entry.get().strip()
-            if not user_input:
-                result_label.configure(text="Please enter a value.")
-                return
-            if method_var.get() == "name":
-                if user_input in self.watchlist_manager.watchlist:
-                    result_label.configure(text=f"'{user_input}' is already in your watchlist.")
-                    return
-                try:
-                    self.watchlist_manager.add_show(user_input)
-                    self.refresh_upcoming()
-                    add_win.destroy()
-                except ValueError as e:
-                    result_label.configure(text=str(e))
-            else:
-                data = self.api_client.lookup_show_by_imdb(user_input)
-                if data is None:
-                    result_label.configure(text=f"Show with IMDb ID '{user_input}' not found.")
-                    return
-                new_show = data.get("name")
-                if new_show in self.watchlist_manager.watchlist:
-                    result_label.configure(text=f"'{new_show}' is already in your watchlist.")
-                    return
-                self.watchlist_manager.add_show(new_show)
-                self.refresh_upcoming()
-                add_win.destroy()
-
-        # Validate and add show (buttons side by side)
-        button_frame = CTkFrame(add_win, fg_color="black")
-        button_frame.pack(pady=(0, 5))
-        
-        self.configure_ctk_button(button_frame, "Add Show", validate_and_add, 0, 0)
-        self.configure_ctk_button(button_frame, "Open IMDb Page", open_imdb_from_add, 0, 1)
-        
-        # # Popular shows section (3 buttons per row)
-        # self.configure_ctk_label(add_win, "Latest Popular Shows:", font=("Helvetica", 12, "bold"), pady=(0, 0))
-        # popular_shows_frame = CTkFrame(add_win, fg_color="black")
-        # popular_shows_frame.pack(padx=0, fill=tk.X)
-        
-        # popular_shows = self.api_client.fetch_latest_shows()  # Ensure you use the latest fetch_latest_shows() function
-        # for i, show in enumerate(popular_shows):
-        #     row = i // 3
-        #     col = i % 3
-        #     btn = CTkButton(popular_shows_frame, text=show, text_color="white",
-        #                     command=lambda s=show: (entry.delete(0, tk.END), entry.insert(0, s)))
-        #     btn.grid(row=row, column=col, padx=2, pady=2)
-
     def configure_ctk_button(self, parent, text, command, row, column, padx=5, pady=5):
         """Configure a CTkButton with the given parameters."""
         button = CTkButton(parent, text=text, command=command, text_color="white")
@@ -1222,8 +1167,10 @@ class GUIManager:
             pass
 
     def close_autocomplete(self, event, autocomplete_listbox):
-        """Close the autocomplete listbox when clicking anywhere in the add show window."""
-        autocomplete_listbox.place_forget()
+        """Close the autocomplete listbox when clicking elsewhere in the panel."""
+        # Check if click was outside the listbox
+        if event.widget != autocomplete_listbox:
+            autocomplete_listbox.place_forget()
 
     def save_qbittorrent_url(self, url):
         """Save the qBittorrent URL setting."""
