@@ -34,12 +34,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller customtkinter pyperclip requests beautifulsoup4 cryptography
       - name: Build Exec (Onefile)
-        run: pyinstaller --paths=src --onefile --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient --hidden-import=WatchlistManager src/UpcomingEpisodes.py
+        run: pyinstaller --paths=WatchListApp --onefile --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient --hidden-import=WatchlistManager WatchListApp/UpcomingEpisodes.py
       
       - name: Build Exec (Without Onefile)
-        run: pyinstaller --paths=src --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient --hidden-import=WatchlistManager src/UpcomingEpisodes.py
+        run: pyinstaller --paths=WatchListApp --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient --hidden-import=WatchlistManager WatchListApp/UpcomingEpisodes.py
+
+      - name: Build Exec MagnetLinker (Without Onefile)
+        run: pyinstaller --paths=MagnetLinker --name=MagnetLinker --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient WatchListApp/MagnetApp.py
      
-      # Upload both builds as a single artifact
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4.6.2
         with:
@@ -47,3 +49,10 @@ jobs:
           path: |
             dist/UpcomingEpisodes.exe
             dist/UpcomingEpisodes
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: MagnetLinker
+          path: |
+            dist/MagnetLinker
