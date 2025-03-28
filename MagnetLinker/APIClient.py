@@ -1,6 +1,8 @@
+
 from CacheManager import CacheManager
 import requests
 import webbrowser
+
 class APIClient:
     def __init__(self, cache_manager):
         self.cache_manager = cache_manager
@@ -44,6 +46,49 @@ class APIClient:
         except Exception as e:
             raise Exception(f"Failed to open qBittorrent: {e}")
         
+    def open_qbittorrent_with_torrent_file(self, torrent_file_path, is_series=False):
+        """Send a torrent file to the qBittorrent web interface with authentication and optional save path.
+        
+        Parameters:
+            torrent_file_path (str): The path to the torrent file.
+            is_series (bool): Determines which save directory to use (series or movies).
+        """
+        try:
+            # Retrieve authentication details from cache
+            username, password = self.cache_manager.load_credentials()
+            if not username or not password:
+                raise Exception("qBittorrent credentials not found in cache.")
+            
+            # Authentication details
+            add_torrent_url = f"{self.qbittorrent_url}api/v2/torrents/add"
+            
+            # Login to qBittorrent
+            login_url = f"{self.qbittorrent_url}api/v2/auth/login"
+            login_data = {"username": username, "password": password}
+            session = requests.Session()
+            login_response = session.post(login_url, data=login_data)
+            
+            if login_response.status_code != 200:
+                raise Exception(f"Failed to login to qBittorrent: {login_response.text}")
+            
+            # Determine save path
+            save_path = self.series_directory if is_series else self.movies_directory
+            
+            # Prepare data payload
+            data = {}
+            if save_path:
+                data["savepath"] = save_path
+            
+            # Open the torrent file in binary mode and send it as multipart data
+            with open(torrent_file_path, "rb") as torrent_file:
+                files = {"torrents": torrent_file}
+                response = session.post(add_torrent_url, data=data, files=files)
+            
+            if response.status_code != 200:
+                raise Exception(f"Failed to add torrent: {response.text}")
+        except Exception as e:
+            raise Exception(f"Failed to open qBittorrent with torrent file: {e}")
+
     def open_qbittorrent_web(self):
         """Open the qBittorrent web interface."""
         try:

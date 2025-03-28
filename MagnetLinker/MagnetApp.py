@@ -9,4 +9,3 @@ if __name__ == "__main__":
     
     root = CTk()
     gui_manager = GUIManager(root, cache_manager, api_client)
-    root.mainloop()

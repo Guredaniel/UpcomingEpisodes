@@ -33,16 +33,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller customtkinter pyperclip requests beautifulsoup4 cryptography pystray pillow
+
       - name: Build Exec UpcomingEpisodes (Onefile)
         run: pyinstaller --paths=WatchListApp --onefile --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient --hidden-import=WatchlistManager WatchListApp/UpcomingEpisodes.py
       
-      - name: Build Exec UpcomingEpisodes (Without Onefile)
+      - name: Build Exec UpcomingEpisodes
         run: pyinstaller --paths=WatchListApp --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient --hidden-import=WatchlistManager WatchListApp/UpcomingEpisodes.py
 
-      - name: Build Exec MagnetLinker (Without Onefile)
+      - name: Build Exec MagnetLinker
         run: pyinstaller --paths=MagnetLinker --name=MagnetLinker --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient MagnetLinker/MagnetApp.py
      
-      - name: Upload Build Artifact
+      - name: Upload Build Artifact - UpcomingEpisodes
         uses: actions/upload-artifact@v4.6.2
         with:
           name: UpcomingEpisodes
@@ -50,7 +51,7 @@ jobs:
             dist/UpcomingEpisodes.exe
             dist/UpcomingEpisodes
 
-      - name: Upload Build Artifact
+      - name: Upload Build Artifact - MagnetLinker
         uses: actions/upload-artifact@v4.6.2
         with:
           name: MagnetLinker
