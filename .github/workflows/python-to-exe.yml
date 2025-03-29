@@ -41,7 +41,7 @@ jobs:
         run: pyinstaller --paths=WatchListApp --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient --hidden-import=WatchlistManager WatchListApp/UpcomingEpisodes.py
 
       - name: Build Exec MagnetLinker
-        run: pyinstaller --paths=MagnetLinker --name=MagnetLinker --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient MagnetLinker/MagnetApp.py
+        run: pyinstaller --paths=MagnetLinker --name=MagnetLinker --icon=icon.png --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient MagnetLinker/MagnetApp.py
      
       - name: Upload Build Artifact - UpcomingEpisodes
         uses: actions/upload-artifact@v4.6.2
