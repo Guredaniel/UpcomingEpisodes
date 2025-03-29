@@ -6,7 +6,6 @@ from customtkinter import CTkToplevel, CTkFrame, CTkLabel, CTkTabview, CTkButton
 from pystray import Icon, MenuItem, Menu
 from PIL import Image, ImageDraw, ImageFont
 import threading
-import time
 import sys
 import winreg
 import webbrowser
@@ -25,16 +24,16 @@ class GUIManager:
         self.monitor_clipboard_enabled = self.cache_manager.load_setting("monitor_clipboard_enabled", True)
         self.add_to_startup = self.cache_manager.load_setting("add_to_startup", False)
 
-        # Initialize termination flag to signal threads to stop
+        # Initialize termination flag to signal tasks to stop
         self.should_exit = False
+        self.prompt_win_geometry = None  # Attribute to store prompt window geometry
 
         # Preload the settings window at startup
         self.load_settings_window()
 
-        # Start monitoring the clipboard in a separate thread if enabled
+        # Start monitoring the clipboard if enabled
         if self.monitor_clipboard_enabled:
-            self.monitor_thread = threading.Thread(target=self.monitor_clipboard, daemon=True)
-            self.monitor_thread.start()
+            self.start_clipboard_monitor()
 
         # Start the system tray icon in a separate daemon thread
         self.tray_thread = threading.Thread(target=self.run_tray, daemon=True)
@@ -49,7 +48,7 @@ class GUIManager:
         The window is pre-built so that it can immediately be shown when requested.
         """
         self.settings_window = CTkToplevel(self.root)
-        self.settings_window.title("MagnetApp - Settings")
+        self.settings_window.title("MagnetLinker - Settings")
         self.settings_window.geometry("350x350")
         # Override window close behavior to hide rather than destroy it.
         self.settings_window.protocol("WM_DELETE_WINDOW", self.settings_window.withdraw)
@@ -239,11 +238,10 @@ class GUIManager:
         
         if setting_name == "monitor_clipboard_enabled":
             if value:
-                self.monitor_thread = threading.Thread(target=self.monitor_clipboard, daemon=True)
-                self.monitor_thread.start()
+                self.start_clipboard_monitor()
             else:
-                self.monitor_thread.join()
-                self.monitor_thread = None
+                # When disabling, simply set flag so scheduled checks stop
+                self.should_exit = True
         elif setting_name == "add_to_startup":
             appName = "MagnetApp"
             regKeyPath = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -261,16 +259,26 @@ class GUIManager:
             except Exception as e:
                 print(f"Error updating startup registry entry: {e}")
 
-    def monitor_clipboard(self):
-        while not self.should_exit:
-            try:
-                current_clipboard = pyperclip.paste()
-                if current_clipboard.startswith("magnet:") and current_clipboard != self.last_magnet_url:
-                    self.last_magnet_url = current_clipboard
-                    self.root.after(0, self.open_qbittorrent_with_magnet, current_clipboard, True)
-            except Exception:
-                pass
-            time.sleep(2)
+    def start_clipboard_monitor(self):
+        """Start periodic clipboard monitoring using Tk.after, avoiding a separate thread."""
+        # Reset the exit flag in case it was previously enabled
+        self.should_exit = False
+        self.check_clipboard()
+        
+    def check_clipboard(self):
+        """Check clipboard for new magnet link and schedule next check."""
+        if self.should_exit:
+            return
+        try:
+            current_clipboard = pyperclip.paste()
+            if current_clipboard.startswith("magnet:") and current_clipboard != self.last_magnet_url:
+                self.last_magnet_url = current_clipboard
+                # Schedule the UI update on the main thread immediately
+                self.root.after(0, self.open_qbittorrent_with_magnet, current_clipboard, True)
+        except Exception:
+            pass
+        # Schedule next clipboard check in 2000ms (2 seconds)
+        self.root.after(2000, self.check_clipboard)
 
     def open_qbittorrent_with_magnet(self, magnet_url, from_clipboard=False):
         """Send the magnet link to the qBittorrent web interface with authentication."""
@@ -284,11 +292,23 @@ class GUIManager:
             def on_select(option):
                 is_series = (option == "Series")
                 self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
+                # Before destroying, store only the position part from geometry
+                geom = prompt_win.winfo_geometry()  # format "320x120+X+Y"
+                parts = geom.split('+')
+                if len(parts) == 3:
+                    self.prompt_win_geometry = f"+{parts[1]}+{parts[2]}"
                 prompt_win.destroy() 
 
             prompt_win = CTkToplevel(self.root)
-            prompt_win.title("Select Content Type")
-            prompt_win.geometry("320x120")
+            prompt_win.title("MagnetLinker - Select Content Type")
+            # Use the stored geometry if available, else use default size/location
+            if self.prompt_win_geometry:
+                # Use fixed size 320x120 with stored position
+                prompt_win.geometry(f"320x120{self.prompt_win_geometry}")
+            else:
+                prompt_win.geometry("320x120")
+            # Lock the window size so that it cannot be changed
+            prompt_win.resizable(False, False)
             prompt_win.configure(fg_color="black")
             prompt_win.lift()
             prompt_win.focus_force()
@@ -314,7 +334,7 @@ class GUIManager:
     def prompt_qbittorrent_credentials(self, magnet=True, button=False):
         """Prompt the user for qBittorrent username and password credentials."""
         credentials_win = CTkToplevel(self.root)
-        credentials_win.title("qBittorrent Credentials")
+        credentials_win.title("MagnetLinker - qBittorrent Credentials")
         credentials_win.geometry("300x200")
         credentials_win.configure(fg_color="black")
         credentials_win.lift()
@@ -359,7 +379,7 @@ class GUIManager:
             import tkinter.filedialog  # Ensure filedialog is available
             # Open file dialog to select a torrent file
             torrent_file_path = tkinter.filedialog.askopenfilename(
-                title="Select Torrent File",
+                title="MagnetLinker - Select Torrent File",
                 filetypes=[("Torrent Files", "*.torrent")]
             )
             if not torrent_file_path:
@@ -372,7 +392,7 @@ class GUIManager:
 
             # Create a prompt window to choose between Movie and Series
             prompt_win = CTkToplevel(self.root)
-            prompt_win.title("Select Content Type")
+            prompt_win.title("MagnetLinker - Select Content Type")
             prompt_win.geometry("320x120")
             prompt_win.configure(fg_color="black")
             prompt_win.lift()
@@ -409,12 +429,8 @@ class GUIManager:
         Stops the system tray icon.
         """
         icon.stop()
-        # Signal threads to stop
+        # Signal tasks to stop
         self.should_exit = True
-
-        # Join monitor_thread if it's alive and not the current thread
-        if hasattr(self, "monitor_thread") and self.monitor_thread.is_alive() and threading.current_thread() is not self.monitor_thread:
-            self.monitor_thread.join(timeout=3)
         
         # Join tray_thread if it's alive and not the current thread
         if hasattr(self, "tray_thread") and self.tray_thread.is_alive() and threading.current_thread() is not self.tray_thread:
@@ -423,19 +439,18 @@ class GUIManager:
         # Stop the Tk main loop and close the application window
         self.root.quit()
         self.root.destroy()
-
-    def run_tray(self):
-        """
-        Creates and runs the system tray icon with a Settings and Exit menu.
-        """
-        icon = Icon("MagnetLinker", self.create_image(), "MagnetLinker",menu=Menu(
+    def create_tray_menu(self):
+        return Menu(
             MenuItem('Open qBittorrent', lambda icon, item: self.api_client.open_qbittorrent_web()),
             MenuItem('Send magnet link', lambda icon, item: self.open_qbittorrent_with_magnet(pyperclip.paste(), from_clipboard=False)),
             MenuItem('Send torrent file', lambda icon, item: self.open_qbittorrent_with_torrent_file()),
             MenuItem('Settings', lambda icon, item: self.on_settings(icon, item)),
             Menu.SEPARATOR,
             MenuItem('Exit', lambda icon, item: self.on_exit(icon, item))
-        ))
+        )
+
+    def run_tray(self):
+        icon = Icon("MagnetLinker", self.create_image(), "MagnetLinker", menu=self.create_tray_menu())
         icon.run()
 
     def create_image(self):
@@ -446,10 +461,10 @@ class GUIManager:
         image = Image.new('RGBA', size, (255, 255, 255, 0))
         draw = ImageDraw.Draw(image)
         try:
-            font = ImageFont.truetype("seguiemj.ttf", 48)
+            font = ImageFont.truetype("seguiemj.ttf", 47)
         except IOError:
             font = ImageFont.load_default()
-        draw.text((5, 5), "🧲", font=font, fill=(255, 255, 255), stroke_width=3, stroke_fill="black")
+        draw.text((0, 11), "🧲", font=font, fill=(255, 255, 255), stroke_width=5, stroke_fill="black")
         return image
 
     def configure_ctk_label(self, parent, text, font=None, pady=5):
