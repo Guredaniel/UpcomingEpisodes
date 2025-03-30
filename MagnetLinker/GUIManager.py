@@ -33,7 +33,7 @@ class GUIManager:
         # This stores the last selection; if within cache_duration_minutes, selection prompt will be skipped.
         self.cached_selection = None
         # Cache selection duration in hours (default is 1)
-        self.cache_duration_minutes = self.cache_manager.load_setting("cache_duration_minutes", 1.0)
+        self.cache_duration_minutes = self.cache_manager.load_setting("cache_duration_minutes", 30.0)
 
         # Preload the settings window at startup
         self.load_settings_window()
@@ -492,7 +492,6 @@ class GUIManager:
     def reset_selection(self):
         """Reset the cached selection so that the user is prompted again."""
         self.cached_selection = None
-        messagebox.showinfo("Reset Selection", "Previous selection has been cleared.")
 
     def create_tray_menu(self):
         return Menu(
