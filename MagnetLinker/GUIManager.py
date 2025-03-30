@@ -9,6 +9,7 @@ import threading
 import sys
 import winreg
 import webbrowser
+from datetime import datetime, timedelta
 
 class GUIManager:
     def __init__(self, root, cache_manager, api_client):
@@ -27,6 +28,12 @@ class GUIManager:
         # Initialize termination flag to signal tasks to stop
         self.should_exit = False
         self.prompt_win_geometry = None  # Attribute to store prompt window geometry
+        
+        # Cached selection for movie/series with timestamp: (option, timestamp)
+        # This stores the last selection; if within cache_duration_minutes, selection prompt will be skipped.
+        self.cached_selection = None
+        # Cache selection duration in hours (default is 1)
+        self.cache_duration_minutes = self.cache_manager.load_setting("cache_duration_minutes", 1.0)
 
         # Preload the settings window at startup
         self.load_settings_window()
@@ -49,7 +56,7 @@ class GUIManager:
         """
         self.settings_window = CTkToplevel(self.root)
         self.settings_window.title("MagnetLinker - Settings")
-        self.settings_window.geometry("350x350")
+        self.settings_window.geometry("350x360")
         # Override window close behavior to hide rather than destroy it.
         self.settings_window.protocol("WM_DELETE_WINDOW", self.settings_window.withdraw)
 
@@ -149,6 +156,16 @@ class GUIManager:
         )
         startup_check.pack(anchor="w", padx=10, pady=10)
 
+        # New: Cache selection duration (hours) setting.
+        duration_label = CTkLabel(general_tab, text="Cache selection duration (minutes):", text_color="white")
+        duration_label.pack(anchor="w", padx=10, pady=(10, 0))
+        duration_entry = CTkEntry(general_tab, width=20, fg_color="gray25", text_color="white")
+        # Set initial value; convert to string.
+        duration_entry.insert(0, str(self.cache_duration_minutes))
+        duration_entry.pack(anchor="w", padx=10, pady=(0, 10), fill=tk.X)
+        # When entry changes, update the setting.
+        duration_entry.bind("<KeyRelease>", lambda event: self.update_cache_duration(duration_entry.get().strip()))
+
     def setup_qbittorrent_tab(self):
         # Setup content for qbittorrent tab
         qbittorrent_tab = self.settings_tabview.tab("qBittorrent")
@@ -220,6 +237,16 @@ class GUIManager:
         else:
             button.configure(text="No Login Data Found", fg_color="red", hover_color="darkred")
 
+    def update_cache_duration(self, value):
+        try:
+            # Convert the entered value to a float (or int)
+            new_duration = float(value)
+            self.cache_duration_minutes = new_duration
+            self.update_setting("cache_duration_minutes", new_duration)
+        except ValueError:
+            # If conversion fails, do nothing or add error handling if desired.
+            pass
+
     def check_qbittorrent_connection(self, button):
         """Check the connection to the qBittorrent web interface and update the button text."""
         def run_check():
@@ -281,7 +308,11 @@ class GUIManager:
         self.root.after(2000, self.check_clipboard)
 
     def open_qbittorrent_with_magnet(self, magnet_url, from_clipboard=False):
-        """Send the magnet link to the qBittorrent web interface with authentication."""
+        """Send the magnet link to the qBittorrent web interface with authentication.
+           If a cached selection exists (and is less than the specified duration), it is automatically used.
+           Otherwise, the user is prompted to choose between movie or series.
+           If the skip checkbox is checked when making a selection, that choice is cached.
+        """
         try:
             if not magnet_url.startswith("magnet:"):
                 return
@@ -289,25 +320,38 @@ class GUIManager:
                 self.root.after(0, self.prompt_qbittorrent_credentials)
                 return
 
+            # Check for a previously cached selection.
+            if self.cached_selection is not None:
+                cached_option, cached_time = self.cached_selection
+                expiration_time = cached_time + timedelta(hours=self.cache_duration_hours)
+                if datetime.now() < expiration_time:
+                    is_series = (cached_option == "Series")
+                    self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
+                    return
+                else:
+                    self.cached_selection = None
+
             def on_select(option):
+                # If the skip (remember choice) checkbox is checked, cache this choice.
+                if skip_var.get():
+                    self.cached_selection = (option, datetime.now())
+                else:
+                    self.cached_selection = None
                 is_series = (option == "Series")
                 self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
-                # Before destroying, store only the position part from geometry
-                geom = prompt_win.winfo_geometry()  # format "320x120+X+Y"
+                # Save window geometry before closing for consistent placement.
+                geom = prompt_win.winfo_geometry()  # format "320x150+X+Y"
                 parts = geom.split('+')
                 if len(parts) == 3:
                     self.prompt_win_geometry = f"+{parts[1]}+{parts[2]}"
                 prompt_win.destroy() 
 
             prompt_win = CTkToplevel(self.root)
-            prompt_win.title("MagnetLinker - Select Content Type")
-            # Use the stored geometry if available, else use default size/location
+            prompt_win.title("MagnetLinker - Content Type")
             if self.prompt_win_geometry:
-                # Use fixed size 320x120 with stored position
-                prompt_win.geometry(f"320x120{self.prompt_win_geometry}")
+                prompt_win.geometry(f"320x150{self.prompt_win_geometry}")
             else:
-                prompt_win.geometry("320x120")
-            # Lock the window size so that it cannot be changed
+                prompt_win.geometry("320x150")
             prompt_win.resizable(False, False)
             prompt_win.configure(fg_color="black")
             prompt_win.lift()
@@ -315,10 +359,15 @@ class GUIManager:
             prompt_win.transient(self.root)
 
             if from_clipboard:
-                prompt_label = CTkLabel(prompt_win, text=f"A magnet link was detected in the clipboard.\nIs this a movie or a series?", text_color="white")
+                prompt_label = CTkLabel(prompt_win, text="A magnet link was detected in the clipboard.\nIs this a movie or a series?", text_color="white")
             else:
                 prompt_label = CTkLabel(prompt_win, text="Is this a movie or a series?", text_color="white")
             prompt_label.pack(pady=10)
+
+            # Add a check box for caching the selected option.
+            skip_var = tk.BooleanVar(value=False)
+            skip_checkbox = CTkCheckBox(prompt_win, text=f"Remember my choice for {self.cache_duration_minutes} minutes", variable=skip_var, text_color="white")
+            skip_checkbox.pack(pady=5)
 
             button_frame = CTkFrame(prompt_win, fg_color="black")
             button_frame.pack(pady=10)
@@ -392,7 +441,7 @@ class GUIManager:
 
             # Create a prompt window to choose between Movie and Series
             prompt_win = CTkToplevel(self.root)
-            prompt_win.title("MagnetLinker - Select Content Type")
+            prompt_win.title("MagnetLinker - Content Type")
             prompt_win.geometry("320x120")
             prompt_win.configure(fg_color="black")
             prompt_win.lift()
@@ -439,11 +488,18 @@ class GUIManager:
         # Stop the Tk main loop and close the application window
         self.root.quit()
         self.root.destroy()
+
+    def reset_selection(self):
+        """Reset the cached selection so that the user is prompted again."""
+        self.cached_selection = None
+        messagebox.showinfo("Reset Selection", "Previous selection has been cleared.")
+
     def create_tray_menu(self):
         return Menu(
             MenuItem('Open qBittorrent', lambda icon, item: self.api_client.open_qbittorrent_web()),
             MenuItem('Send magnet link', lambda icon, item: self.open_qbittorrent_with_magnet(pyperclip.paste(), from_clipboard=False)),
             MenuItem('Send torrent file', lambda icon, item: self.open_qbittorrent_with_torrent_file()),
+            MenuItem('Reset Selection', lambda icon, item: self.reset_selection()),
             MenuItem('Settings', lambda icon, item: self.on_settings(icon, item)),
             Menu.SEPARATOR,
             MenuItem('Exit', lambda icon, item: self.on_exit(icon, item))
