@@ -321,7 +321,7 @@ class GUIManager:
             # Check for a previously cached selection.
             if self.cached_selection is not None:
                 cached_option, cached_time = self.cached_selection
-                expiration_time = cached_time + timedelta(hours=self.cache_duration_hours)
+                expiration_time = cached_time + timedelta(minutes=self.cache_duration_minutes)
                 if datetime.now() < expiration_time:
                     is_series = (cached_option == "Series")
                     self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
