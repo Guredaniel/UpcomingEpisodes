@@ -59,6 +59,7 @@ class GUIManager:
         self.settings_window.geometry("350x360")
         # Override window close behavior to hide rather than destroy it.
         self.settings_window.protocol("WM_DELETE_WINDOW", self.settings_window.withdraw)
+        self.settings_window.resizable(False, False)
 
         # Main frame for settings
         main_frame = CTkFrame(self.settings_window, fg_color="#1A1A1A", corner_radius=10, border_width=1, border_color="#333333")
@@ -218,15 +219,12 @@ class GUIManager:
         delete_login_button.pack(side="left", padx=5)
 
     def save_information(self, address, setting_name):
-        if setting_name == "series_directory":
-            self.api_client.series_directory = address
-        elif setting_name == "movies_directory":
-            self.api_client.movies_directory = address
-        elif setting_name == "qbittorrent_url":
-            self.api_client.qbittorrent_url = address
-        else:
+        valid_settings = {"series_directory", "movies_directory", "qbittorrent_url"}
+    
+        if setting_name not in valid_settings:
             raise ValueError(f"Unknown setting name: {setting_name}")
-        
+    
+        setattr(self.api_client, setting_name, address)
         self.cache_manager.save_setting(setting_name, address)
 
     def delete_login_cache(self, button):
@@ -389,6 +387,7 @@ class GUIManager:
         credentials_win.lift()
         credentials_win.focus_force()
         credentials_win.transient(self.root)
+        credentials_win.resizable(False, False)
 
         self.configure_ctk_label(credentials_win, "Username:")
         username_entry = CTkEntry(credentials_win, width=40, fg_color="black", text_color="white")
@@ -447,6 +446,7 @@ class GUIManager:
             prompt_win.lift()
             prompt_win.focus_force()
             prompt_win.transient(self.root)
+            prompt_win.resizable(False, False)
 
             prompt_label = CTkLabel(prompt_win, text="Is this torrent for a movie or a series?", text_color="white")
             prompt_label.pack(pady=10)
