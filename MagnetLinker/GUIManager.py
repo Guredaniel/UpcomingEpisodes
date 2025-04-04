@@ -109,7 +109,7 @@ class GUIManager:
         directories_tab = self.settings_tabview.tab("Directories")
 
         # Series Directory entry
-        self.configure_ctk_label(directories_tab, "Series Directory:", pady=(10, 0))
+        self.configure_ctk_label(directories_tab, "Series directory:", pady=(10, 0))
         series_directory_entry = CTkEntry(directories_tab, width=40, fg_color="gray25", text_color="white")
         series_directory_entry.insert(0, self.api_client.series_directory)
         series_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
@@ -119,7 +119,7 @@ class GUIManager:
         )
 
         # Movies Directory entry
-        self.configure_ctk_label(directories_tab, "Movies Directory:", pady=(10, 0))
+        self.configure_ctk_label(directories_tab, "Movies directory:", pady=(10, 0))
         movies_directory_entry = CTkEntry(directories_tab, width=40, fg_color="gray25", text_color="white")
         movies_directory_entry.insert(0, self.api_client.movies_directory)
         movies_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
@@ -171,7 +171,7 @@ class GUIManager:
         # Setup content for qbittorrent tab
         qbittorrent_tab = self.settings_tabview.tab("qBittorrent")
 
-        self.configure_ctk_label(qbittorrent_tab, "qBittorrent Web URL:", pady=(10, 0))
+        self.configure_ctk_label(qbittorrent_tab, "qBittorrent web URL:", pady=(10, 0))
         qbittorrent_url_entry = CTkEntry(qbittorrent_tab, width=40, fg_color="gray25", text_color="white")
         qbittorrent_url_entry.insert(0, self.api_client.qbittorrent_url)
         qbittorrent_url_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
@@ -185,7 +185,7 @@ class GUIManager:
 
         check_connection_button = CTkButton(
             connection_buttons_frame,
-            text="Check Connection",
+            text="Check connection",
             command=lambda: self.check_qbittorrent_connection(check_connection_button),
             text_color="white"
         )
@@ -193,7 +193,7 @@ class GUIManager:
 
         open_site_button = CTkButton(
             connection_buttons_frame,
-            text="Open Web UI",
+            text="Open web UI",
             command=lambda: webbrowser.open(self.api_client.qbittorrent_url),
             text_color="white"
         )
@@ -204,7 +204,7 @@ class GUIManager:
 
         save_login_button = CTkButton(
             login_frame,
-            text="Set Credentials",
+            text="Set credentials",
             command=lambda: self.prompt_qbittorrent_credentials(magnet=False, button=save_login_button),
             text_color="white"
         )
@@ -212,7 +212,7 @@ class GUIManager:
 
         delete_login_button = CTkButton(
             login_frame,
-            text="Clear Credentials",
+            text="Clear credentials",
             command=lambda: self.delete_login_cache(delete_login_button),
             text_color="white"
         )
@@ -251,9 +251,9 @@ class GUIManager:
             button.configure(text="Testing...")
             success, message = self.api_client.check_qbittorrent_connection()
             if success:
-                button.configure(text="Connection Successful", fg_color="green", hover_color="darkgreen")
+                button.configure(text="Connection successful", fg_color="green", hover_color="darkgreen")
             else:
-                button.configure(text="Connection Failed", fg_color="red", hover_color="darkred")
+                button.configure(text="Connection failed", fg_color="red", hover_color="darkred")
         threading.Thread(target=run_check).start()
 
     def update_setting(self, setting_name, value):
@@ -498,7 +498,7 @@ class GUIManager:
             MenuItem('Open qBittorrent', lambda icon, item: self.api_client.open_qbittorrent_web()),
             MenuItem('Send magnet link', lambda icon, item: self.open_qbittorrent_with_magnet(pyperclip.paste(), from_clipboard=False)),
             MenuItem('Send torrent file', lambda icon, item: self.open_qbittorrent_with_torrent_file()),
-            MenuItem('Reset Selection', lambda icon, item: self.reset_selection()),
+            MenuItem('Reset selection', lambda icon, item: self.reset_selection()),
             MenuItem('Settings', lambda icon, item: self.on_settings(icon, item)),
             Menu.SEPARATOR,
             MenuItem('Exit', lambda icon, item: self.on_exit(icon, item))
