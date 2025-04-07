@@ -1,4 +1,3 @@
-
 import pyperclip
 import tkinter as tk
 from tkinter import messagebox
@@ -34,6 +33,7 @@ class GUIManager:
         self.cached_selection = None
         # Cache selection duration in hours (default is 1)
         self.cache_duration_minutes = self.cache_manager.load_setting("cache_duration_minutes", 30.0)
+        self.indefinite_selection = self.cache_manager.load_setting("indefinite_selection", False)
 
         # Preload the settings window at startup
         self.load_settings_window()
@@ -321,20 +321,31 @@ class GUIManager:
             # Check for a previously cached selection.
             if self.cached_selection is not None:
                 cached_option, cached_time = self.cached_selection
-                expiration_time = cached_time + timedelta(minutes=self.cache_duration_minutes)
-                if datetime.now() < expiration_time:
+                if self.indefinite_selection:
                     is_series = (cached_option == "Series")
                     self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
                     return
-                else:
-                    self.cached_selection = None
+                elif cached_time is not None:
+                    expiration_time = cached_time + timedelta(minutes=self.cache_duration_minutes)
+                    if datetime.now() < expiration_time:
+                        is_series = (cached_option == "Series")
+                        self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
+                        return
+                    else:
+                        self.cached_selection = None
 
             def on_select(option):
-                # If the skip (remember choice) checkbox is checked, cache this choice.
-                if skip_var.get():
+                if indefinite_var.get():
+                    self.cached_selection = (option, None)  # None timestamp means indefinite
+                    self.indefinite_selection = True
+                elif skip_var.get():
                     self.cached_selection = (option, datetime.now())
+                    self.indefinite_selection = False
                 else:
                     self.cached_selection = None
+                    self.indefinite_selection = False
+                
+                self.cache_manager.save_setting("indefinite_selection", self.indefinite_selection)
                 is_series = (option == "Series")
                 self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
                 # Save window geometry before closing for consistent placement.
@@ -362,10 +373,30 @@ class GUIManager:
                 prompt_label = CTkLabel(prompt_win, text="Is this a movie or a series?", text_color="white")
             prompt_label.pack(pady=10)
 
-            # Add a check box for caching the selected option.
+            # Add check boxes for selection caching options
             skip_var = tk.BooleanVar(value=False)
-            skip_checkbox = CTkCheckBox(prompt_win, text=f"Remember my choice for {self.cache_duration_minutes} minutes", variable=skip_var, text_color="white")
-            skip_checkbox.pack(pady=5)
+            indefinite_var = tk.BooleanVar(value=False)
+            
+            checkbox_frame = CTkFrame(prompt_win, fg_color="black")
+            checkbox_frame.pack(pady=5)
+            
+            skip_checkbox = CTkCheckBox(
+                checkbox_frame, 
+                text=f"Remember for {self.cache_duration_minutes} minutes", 
+                variable=skip_var, 
+                text_color="white",
+                command=lambda: self.handle_checkbox_toggle(skip_var, indefinite_var)
+            )
+            skip_checkbox.pack(pady=2)
+            
+            indefinite_checkbox = CTkCheckBox(
+                checkbox_frame, 
+                text="Remember indefinitely", 
+                variable=indefinite_var, 
+                text_color="white",
+                command=lambda: self.handle_checkbox_toggle(indefinite_var, skip_var)
+            )
+            indefinite_checkbox.pack(pady=2)
 
             button_frame = CTkFrame(prompt_win, fg_color="black")
             button_frame.pack(pady=10)
@@ -377,6 +408,11 @@ class GUIManager:
             self.handle_error(f"Network error: {e}")
         except Exception as e:
             self.handle_error(f"Failed to open qBittorrent: {e}")
+
+    def handle_checkbox_toggle(self, checked_var, other_var):
+        """Ensure only one checkbox can be selected at a time"""
+        if checked_var.get():
+            other_var.set(False)
 
     def prompt_qbittorrent_credentials(self, magnet=True, button=False):
         """Prompt the user for qBittorrent username and password credentials."""
@@ -490,8 +526,10 @@ class GUIManager:
         self.root.destroy()
 
     def reset_selection(self):
-        """Reset the cached selection so that the user is prompted again."""
+        """Reset the cached selection and indefinite flag"""
         self.cached_selection = None
+        self.indefinite_selection = False
+        self.cache_manager.save_setting("indefinite_selection", False)
 
     def create_tray_menu(self):
         return Menu(
