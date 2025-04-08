@@ -358,9 +358,9 @@ class GUIManager:
             prompt_win = CTkToplevel(self.root)
             prompt_win.title("MagnetLinker - Content Type")
             if self.prompt_win_geometry:
-                prompt_win.geometry(f"320x150{self.prompt_win_geometry}")
+                prompt_win.geometry(f"320x170{self.prompt_win_geometry}")
             else:
-                prompt_win.geometry("320x150")
+                prompt_win.geometry("320x170")
             prompt_win.resizable(False, False)
             prompt_win.configure(fg_color="black")
             prompt_win.lift()
@@ -387,7 +387,7 @@ class GUIManager:
                 text_color="white",
                 command=lambda: self.handle_checkbox_toggle(skip_var, indefinite_var)
             )
-            skip_checkbox.pack(pady=2)
+            skip_checkbox.pack(anchor="w", pady=2)
             
             indefinite_checkbox = CTkCheckBox(
                 checkbox_frame, 
@@ -396,7 +396,7 @@ class GUIManager:
                 text_color="white",
                 command=lambda: self.handle_checkbox_toggle(indefinite_var, skip_var)
             )
-            indefinite_checkbox.pack(pady=2)
+            indefinite_checkbox.pack(anchor="w", pady=2)
 
             button_frame = CTkFrame(prompt_win, fg_color="black")
             button_frame.pack(pady=10)
