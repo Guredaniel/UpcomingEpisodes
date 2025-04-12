@@ -481,7 +481,6 @@ class GUIManager:
             prompt_win.configure(fg_color="black")
             prompt_win.lift()
             prompt_win.focus_force()
-            prompt_win.transient(self.root)
             prompt_win.resizable(False, False)
 
             prompt_label = CTkLabel(prompt_win, text="Is this torrent for a movie or a series?", text_color="white")
