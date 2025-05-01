@@ -1,23 +1,38 @@
 import pyperclip
 import tkinter as tk
 from tkinter import messagebox
-from customtkinter import CTkToplevel, CTkFrame, CTkLabel, CTkTabview, CTkButton, CTkEntry, CTkCheckBox
+import tkinter.font as tkfont
+from customtkinter import CTkToplevel, CTkFrame, CTkLabel, CTkTabview, CTkButton, CTkEntry, CTkCheckBox, CTkFont
 from pystray import Icon, MenuItem, Menu
 from PIL import Image, ImageDraw, ImageFont
 import threading
 import sys
-import winreg
 import webbrowser
 from datetime import datetime, timedelta
+import os
+
+# Only import winreg if on Windows
+if sys.platform.startswith("win32"):
+    import winreg
 
 class GUIManager:
     def __init__(self, root, cache_manager, api_client):
-        # Initialize a hidden main window for scheduling tasks
-        self.root = root
-        self.root.withdraw()
-
+        self.root = root  # Assign root first!
+        # Suppress Tkinter deprecation warning on macOS
+        if sys.platform == "darwin":
+            os.environ["TK_SILENCE_DEPRECATION"] = "1"
+            
+        # Configure root window properties
+        self.root.resizable(False, False)
+        self.root.title("MagnetLinker")
+        self.root.geometry("1x1")  # Minimal size since we don't show the main window
+        
         self.cache_manager = cache_manager
         self.api_client = api_client
+        self.tk_default_font = tkfont.nametofont("TkDefaultFont")  # <-- add this line
+        # Get Tkinter default font and create a CTkFont for CustomTkinter widgets
+        tk_default = tkfont.nametofont("TkDefaultFont")
+        self.ctk_default_font = CTkFont(family=tk_default.cget("family"), size=tk_default.cget("size"))
         
         # Initialize last_magnet_url and settings loaded from cache
         self.last_magnet_url = ""
@@ -29,25 +44,93 @@ class GUIManager:
         self.prompt_win_geometry = None  # Attribute to store prompt window geometry
         
         # Cached selection for movie/series with timestamp: (option, timestamp)
-        # This stores the last selection; if within cache_duration_minutes, selection prompt will be skipped.
         self.cached_selection = None
-        # Cache selection duration in hours (default is 1)
         self.cache_duration_minutes = self.cache_manager.load_setting("cache_duration_minutes", 30.0)
         self.indefinite_selection = self.cache_manager.load_setting("indefinite_selection", False)
 
         # Preload the settings window at startup
         self.load_settings_window()
 
+        # Hide the main window appropriately for the platform
+        if sys.platform == "darwin":
+            self.root.withdraw()  # On macOS, withdraw instead of iconify
+            self.create_mac_settings_button()
+        else:
+            self.root.withdraw()
+
         # Start monitoring the clipboard if enabled
         if self.monitor_clipboard_enabled:
             self.start_clipboard_monitor()
 
-        # Start the system tray icon in a separate daemon thread
-        self.tray_thread = threading.Thread(target=self.run_tray, daemon=True)
-        self.tray_thread.start()
+        # Start the system tray icon
+        if sys.platform == "darwin":
+            print("[INFO] System tray icon is not supported on macOS due to technical limitations. The app will run without a tray icon.")
+        else:
+            self.tray_thread = threading.Thread(target=self.run_tray, daemon=True)
+            self.tray_thread.start()
 
         # Start the Tk event loop to keep the application running
         self.root.mainloop()
+
+    def create_mac_settings_button(self):
+        """Create a small floating window with tray actions for macOS."""
+        self.mac_settings_win = tk.Toplevel(self.root)
+        self.mac_settings_win.title("MagnetLinker")
+        self.mac_settings_win.geometry("180x220")
+        self.mac_settings_win.resizable(False, False)
+        self.mac_settings_win.attributes("-topmost", True)
+        self.mac_settings_win.protocol("WM_DELETE_WINDOW", lambda: self.root.quit())  # Prevent closing
+
+        btn_frame = tk.Frame(self.mac_settings_win)
+        btn_frame.pack(expand=True, fill="both", padx=8, pady=8)
+
+        tk.Button(
+            btn_frame,
+            text="Open qBittorrent",
+            command=lambda: self.api_client.open_qbittorrent_web(),
+            width=18,
+            height=1
+        ).pack(fill="x", pady=2)
+
+        tk.Button(
+            btn_frame,
+            text="Send magnet link",
+            command=lambda: self.open_qbittorrent_with_magnet(pyperclip.paste(), from_clipboard=False),
+            width=18,
+            height=1
+        ).pack(fill="x", pady=2)
+
+        tk.Button(
+            btn_frame,
+            text="Send torrent file",
+            command=self.open_qbittorrent_with_torrent_file,
+            width=18,
+            height=1
+        ).pack(fill="x", pady=2)
+
+        tk.Button(
+            btn_frame,
+            text="Reset selection",
+            command=self.reset_selection,
+            width=18,
+            height=1
+        ).pack(fill="x", pady=2)
+
+        tk.Button(
+            btn_frame,
+            text="Settings",
+            command=lambda: self.settings_window.deiconify(),
+            width=18,
+            height=1
+        ).pack(fill="x", pady=2)
+
+        tk.Button(
+            btn_frame,
+            text="Exit",
+            command=lambda: self.root.quit(),
+            width=18,
+            height=1
+        ).pack(fill="x", pady=2)
 
     def load_settings_window(self):
         """
@@ -66,7 +149,7 @@ class GUIManager:
         main_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         # Add a title label
-        title_label = CTkLabel(main_frame, text="Settings", font=("Helvetica", 16, "bold"), text_color="white")
+        title_label = CTkLabel(main_frame, text="Settings", text_color="white")
         title_label.pack(pady=(10, 0))
 
         # Create the tabview
@@ -90,7 +173,6 @@ class GUIManager:
             main_frame,
             text="",
             text_color="white",
-            font=("Helvetica", 12),
             fg_color="#FF5555",  # Red background
             corner_radius=5,
             height=0  # Initially collapsed
@@ -144,18 +226,27 @@ class GUIManager:
         )
         clipboard_check.pack(anchor="w", padx=10, pady=10)
 
-        # Add to Startup check box
-        startup_var = tk.BooleanVar(value=self.add_to_startup)
-        startup_check = CTkCheckBox(
-            general_tab,
-            text="Add to startup",
-            variable=startup_var,
-            onvalue=True,
-            offvalue=False,
-            text_color="white",
-            command=lambda: self.update_setting("add_to_startup", startup_var.get())
-        )
-        startup_check.pack(anchor="w", padx=10, pady=10)
+                # Show info for macOS users
+        if sys.platform == "darwin":
+            info_label = CTkLabel(
+                general_tab,
+                text="On macOS, add this app to Login Items in\nSystem Settings for startup launch.",
+                text_color="#FFD700"
+            )
+            info_label.pack(anchor="w", padx=10, pady=(0, 10))
+        else:
+            # Add to Startup check box
+            startup_var = tk.BooleanVar(value=self.add_to_startup)
+            startup_check = CTkCheckBox(
+                general_tab,
+                text="Add to startup",
+                variable=startup_var,
+                onvalue=True,
+                offvalue=False,
+                text_color="white",
+                command=lambda: self.update_setting("add_to_startup", startup_var.get())
+            )
+            startup_check.pack(anchor="w", padx=10, pady=10)
 
         # New: Cache selection duration (hours) setting.
         duration_label = CTkLabel(general_tab, text="Cache selection duration (minutes):", text_color="white")
@@ -268,21 +359,26 @@ class GUIManager:
                 # When disabling, simply set flag so scheduled checks stop
                 self.should_exit = True
         elif setting_name == "add_to_startup":
-            appName = "MagnetApp"
-            regKeyPath = r"Software\Microsoft\Windows\CurrentVersion\Run"
-            try:
-                regKey = winreg.OpenKey(winreg.HKEY_CURRENT_USER, regKeyPath, 0, winreg.KEY_ALL_ACCESS)
-                if value:
-                    executable = sys.executable
-                    winreg.SetValueEx(regKey, appName, 0, winreg.REG_SZ, f'"{executable}"')
-                else:
-                    try:
-                        winreg.DeleteValue(regKey, appName)
-                    except FileNotFoundError:
-                        pass
-                winreg.CloseKey(regKey)
-            except Exception as e:
-                print(f"Error updating startup registry entry: {e}")
+            # Only attempt to add to startup if on Windows
+            if sys.platform.startswith("win32"):
+                appName = "MagnetApp"
+                regKeyPath = r"Software\Microsoft\Windows\CurrentVersion\Run"
+                try:
+                    regKey = winreg.OpenKey(winreg.HKEY_CURRENT_USER, regKeyPath, 0, winreg.KEY_ALL_ACCESS)
+                    if value:
+                        executable = sys.executable
+                        winreg.SetValueEx(regKey, appName, 0, winreg.REG_SZ, f'"{executable}"')
+                    else:
+                        try:
+                            winreg.DeleteValue(regKey, appName)
+                        except FileNotFoundError:
+                            pass
+                    winreg.CloseKey(regKey)
+                except Exception as e:
+                    print(f"Error updating startup registry entry: {e}")
+            else:
+                # On macOS/Linux, inform user this feature is not supported
+                print("Add to startup is only supported on Windows.")
 
     def start_clipboard_monitor(self):
         """Start periodic clipboard monitoring using Tk.after, avoiding a separate thread."""
@@ -318,42 +414,69 @@ class GUIManager:
                 self.root.after(0, self.prompt_qbittorrent_credentials)
                 return
 
+            # macOS fix: temporarily deiconify root so Toplevel renders correctly
+            root_was_withdrawn = False
+            if sys.platform == "darwin" and not self.root.winfo_viewable():
+                self.root.deiconify()
+                root_was_withdrawn = True
+
             # Check for a previously cached selection.
             if self.cached_selection is not None:
                 cached_option, cached_time = self.cached_selection
                 if self.indefinite_selection:
                     is_series = (cached_option == "Series")
                     self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
+                    if root_was_withdrawn:
+                        self.root.withdraw()
                     return
                 elif cached_time is not None:
                     expiration_time = cached_time + timedelta(minutes=self.cache_duration_minutes)
                     if datetime.now() < expiration_time:
                         is_series = (cached_option == "Series")
                         self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
+                        if root_was_withdrawn:
+                            self.root.withdraw()
                         return
                     else:
                         self.cached_selection = None
 
             def on_select(option):
-                if indefinite_var.get():
-                    self.cached_selection = (option, None)  # None timestamp means indefinite
-                    self.indefinite_selection = True
-                elif skip_var.get():
-                    self.cached_selection = (option, datetime.now())
-                    self.indefinite_selection = False
-                else:
-                    self.cached_selection = None
-                    self.indefinite_selection = False
-                
-                self.cache_manager.save_setting("indefinite_selection", self.indefinite_selection)
-                is_series = (option == "Series")
-                self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
-                # Save window geometry before closing for consistent placement.
-                geom = prompt_win.winfo_geometry()  # format "320x150+X+Y"
-                parts = geom.split('+')
-                if len(parts) == 3:
-                    self.prompt_win_geometry = f"+{parts[1]}+{parts[2]}"
-                prompt_win.destroy() 
+                try:
+                    if indefinite_var.get():
+                        self.cached_selection = (option, None)  # None timestamp means indefinite
+                        self.indefinite_selection = True
+                    elif skip_var.get():
+                        self.cached_selection = (option, datetime.now())
+                        self.indefinite_selection = False
+                    else:
+                        self.cached_selection = None
+                        self.indefinite_selection = False
+                    self.cache_manager.save_setting("indefinite_selection", self.indefinite_selection)
+                    is_series = (option == "Series")
+                    try:
+                        self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
+                    except Exception as e:
+                        error_str = str(e)
+                        if (
+                            "No route to host" in error_str
+                            or "Failed to establish a new connection" in error_str
+                            or "Max retries exceeded" in error_str
+                        ):
+                            self.handle_error(
+                                "Could not connect to qBittorrent at the configured address.\n"
+                                "Please check your network connection and qBittorrent Web UI settings."
+                            )
+                        else:
+                            self.handle_error(error_str)
+                    geom = prompt_win.winfo_geometry()
+                    parts = geom.split('+')
+                    if len(parts) == 3:
+                        self.prompt_win_geometry = f"+{parts[1]}+{parts[2]}"
+                    prompt_win.destroy()
+                    if root_was_withdrawn:
+                        self.root.withdraw()
+                except Exception as e:
+                    self.handle_error(str(e))
 
             prompt_win = CTkToplevel(self.root)
             prompt_win.title("MagnetLinker - Content Type")
@@ -368,42 +491,64 @@ class GUIManager:
             prompt_win.transient(self.root)
 
             if from_clipboard:
-                prompt_label = CTkLabel(prompt_win, text="A magnet link was detected in the clipboard.\nIs this a movie or a series?", text_color="white")
+                prompt_label = CTkLabel(
+                    prompt_win,
+                    text="A magnet link was detected in the clipboard.\nIs this a movie or a series?",
+                    text_color="white",
+                    font=self.ctk_default_font
+                )
             else:
-                prompt_label = CTkLabel(prompt_win, text="Is this a movie or a series?", text_color="white")
+                prompt_label = CTkLabel(
+                    prompt_win,
+                    text="Is this a movie or a series?",
+                    text_color="white",
+                    font=self.ctk_default_font
+                )
             prompt_label.pack(pady=10)
 
-            # Add check boxes for selection caching options
             skip_var = tk.BooleanVar(value=False)
             indefinite_var = tk.BooleanVar(value=False)
-            
             checkbox_frame = CTkFrame(prompt_win, fg_color="black")
             checkbox_frame.pack(pady=5)
-            
             skip_checkbox = CTkCheckBox(
                 checkbox_frame, 
                 text=f"Remember for {self.cache_duration_minutes} minutes", 
                 variable=skip_var, 
                 text_color="white",
-                command=lambda: self.handle_checkbox_toggle(skip_var, indefinite_var)
+                command=lambda: self.handle_checkbox_toggle(skip_var, indefinite_var),
+                font=self.ctk_default_font
             )
             skip_checkbox.pack(anchor="w", pady=2)
-            
             indefinite_checkbox = CTkCheckBox(
                 checkbox_frame, 
                 text="Remember indefinitely", 
                 variable=indefinite_var, 
                 text_color="white",
-                command=lambda: self.handle_checkbox_toggle(indefinite_var, skip_var)
+                command=lambda: self.handle_checkbox_toggle(indefinite_var, skip_var),
+                font=self.ctk_default_font
             )
             indefinite_checkbox.pack(anchor="w", pady=2)
-
             button_frame = CTkFrame(prompt_win, fg_color="black")
             button_frame.pack(pady=10)
-            movie_button = CTkButton(button_frame, text="Movie", command=lambda: on_select("Movie"), text_color="white")
+            movie_button = CTkButton(
+                button_frame,
+                text="Movie",
+                command=lambda: on_select("Movie"),
+                text_color="white",
+                font=self.ctk_default_font
+            )
             movie_button.grid(row=0, column=0, padx=10)
-            series_button = CTkButton(button_frame, text="Series", command=lambda: on_select("Series"), text_color="white")
+            series_button = CTkButton(
+                button_frame,
+                text="Series",
+                command=lambda: on_select("Series"),
+                text_color="white",
+                font=self.ctk_default_font
+            )
             series_button.grid(row=0, column=1, padx=10)
+
+            # macOS fix: force redraw
+            prompt_win.update()
         except (ConnectionError, TimeoutError) as e:
             self.handle_error(f"Network error: {e}")
         except Exception as e:
@@ -416,21 +561,28 @@ class GUIManager:
 
     def prompt_qbittorrent_credentials(self, magnet=True, button=False):
         """Prompt the user for qBittorrent username and password credentials."""
-        credentials_win = CTkToplevel(self.root)
+        credentials_win = CTkToplevel()  # Create without parent
         credentials_win.title("MagnetLinker - qBittorrent Credentials")
         credentials_win.geometry("300x200")
-        credentials_win.configure(fg_color="black")
+        credentials_win.configure(fg_color="#1A1A1A")  # Match dark theme
+        
+        # Force the window to be on top and grab focus
+        credentials_win.attributes('-topmost', True)
         credentials_win.lift()
         credentials_win.focus_force()
-        credentials_win.transient(self.root)
+        credentials_win.grab_set()  # Make window modal
         credentials_win.resizable(False, False)
 
+        # Add subtle border on macOS
+        if sys.platform == "darwin":
+            credentials_win.configure(border_width=1, border_color="#333333")
+
         self.configure_ctk_label(credentials_win, "Username:")
-        username_entry = CTkEntry(credentials_win, width=40, fg_color="black", text_color="white")
+        username_entry = CTkEntry(credentials_win, width=40, fg_color="#2B2B2B", text_color="white")
         username_entry.pack(pady=(0, 5), padx=10, fill="x")
 
         self.configure_ctk_label(credentials_win, "Password:")
-        password_entry = CTkEntry(credentials_win, width=40, fg_color="black", text_color="white", show="*")
+        password_entry = CTkEntry(credentials_win, width=40, fg_color="#2B2B2B", text_color="white", show="*")
         password_entry.pack(pady=(0, 5), padx=10, fill="x")
 
         def submit_credentials(magnet, button):
@@ -439,19 +591,27 @@ class GUIManager:
             if username and password:
                 try:
                     self.cache_manager.save_credentials(username, password)
+                    if button:
+                        button.configure(text="Credentials Saved", fg_color="green", hover_color="darkgreen")
                 except Exception as e:
                     if button:
                         button.configure(text="Failed Saving", fg_color="red", hover_color="darkred")
-                        credentials_win.destroy()
-                if button:
-                    button.configure(text="Credentials Saved", fg_color="green", hover_color="darkgreen")
-                credentials_win.destroy()
-                if magnet:
-                    self.open_qbittorrent_with_magnet(self.last_magnet_url)
+                finally:
+                    credentials_win.grab_release()
+                    credentials_win.destroy()
+                    if magnet:
+                        self.open_qbittorrent_with_magnet(self.last_magnet_url)
             else:
-                self.handle_error("Please enter both the username and password.")
+                self.handle_error("Please enter both username and password.")
 
-        submit_button = CTkButton(credentials_win, text="Submit", command=lambda: submit_credentials(magnet, button), text_color="white")
+        submit_button = CTkButton(
+            credentials_win, 
+            text="Submit",
+            command=lambda: submit_credentials(magnet, button),
+            text_color="white",
+            fg_color="#1E90FF",
+            hover_color="#0066CC"
+        )
         submit_button.pack(pady=10)
 
     def open_qbittorrent_with_torrent_file(self):
@@ -561,6 +721,10 @@ class GUIManager:
 
     def configure_ctk_label(self, parent, text, font=None, pady=5):
         """Configure a CTkLabel with the given parameters."""
-        label = CTkLabel(parent, text=text, font=font, text_color="white", anchor="w", justify="left")
+        # Only set font if explicitly passed
+        if font is not None:
+            label = CTkLabel(parent, text=text, font=font, text_color="white", anchor="w", justify="left")
+        else:
+            label = CTkLabel(parent, text=text, text_color="white", anchor="w", justify="left")
         label.pack(pady=pady, anchor="w", padx=10)
         return label

@@ -2,6 +2,7 @@ import os
 import re
 import json
 import time
+import sys
 from cryptography.fernet import Fernet
 class CacheManager:
     def __init__(self):
@@ -20,8 +21,17 @@ class CacheManager:
             return key
         
     def get_cache_directory(self):
-        """Ensure a cache directory exists inside your %LOCALAPPDATA% folder."""
-        appdata = os.path.expanduser("~\\AppData\\Local")
+        """Ensure a cache directory exists in the appropriate location for the platform."""
+        if sys.platform == "darwin":
+            # Use ~/Library/Application Support for macOS
+            appdata = os.path.expanduser("~/Library/Application Support")
+        elif sys.platform.startswith("win32"):
+            # Use %LOCALAPPDATA% for Windows
+            appdata = os.path.expanduser("~\\AppData\\Local")
+        else:
+            # Use ~/.local/share for Linux/Unix
+            appdata = os.path.expanduser("~/.local/share")
+            
         cache_dir = os.path.join(appdata, "MagnetLinker")
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir)
