@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: macos-latest
 
     steps:
       # Checkout the repository
@@ -33,26 +33,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install customtkinter pyperclip pystray pillow cryptography requests pyinstaller
 
-      - name: Build Exec UpcomingEpisodes (Onefile)
-        run: pyinstaller --paths=WatchListApp --onefile --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient --hidden-import=WatchlistManager WatchListApp/UpcomingEpisodes.py
-      
-      - name: Build Exec UpcomingEpisodes
-        run: pyinstaller --paths=WatchListApp --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient --hidden-import=WatchlistManager WatchListApp/UpcomingEpisodes.py
-
       - name: Build Exec MagnetLinker
-        run: pyinstaller --paths=MagnetLinker --name=MagnetLinker --icon=MagnetLinker/icon.png --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient MagnetLinker/MagnetApp.py
-     
-      - name: Upload Build Artifact - UpcomingEpisodes
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: UpcomingEpisodes
-          path: |
-            dist/UpcomingEpisodes.exe
-            dist/UpcomingEpisodes
+        run: |
+          # Ensure icon is .icns for macOS, adjust path if needed
+          pyinstaller --paths=MagnetLinker --name=MagnetLinker --icon=MagnetLinker/icon.icns --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient MagnetLinker/MagnetApp.py
+
+      # Optional: Create a DMG from the .app bundle
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Create DMG
+        run: |
+          create-dmg dist/MagnetLinker.app
 
       - name: Upload Build Artifact - MagnetLinker
         uses: actions/upload-artifact@v4.6.2
         with:
           name: MagnetLinker
           path: |
-            dist/MagnetLinker
+            dist/MagnetLinker.app
+            dist/MagnetLinker*.dmg
