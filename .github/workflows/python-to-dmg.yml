@@ -1,0 +1,55 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: Python application
+
+on:
+  workflow_dispatch:  # Allows manual triggering of the workflow
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      # Checkout the repository
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # Set up Python environment
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.x
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install customtkinter pyperclip pystray pillow cryptography requests pyinstaller
+
+      - name: Build Exec MagnetLinker
+        run: |
+          # Ensure icon is .icns for macOS, adjust path if needed
+          pyinstaller --paths=MagnetLinker --name=MagnetLinker --icon=MagnetLinker/icon.icns --windowed --hidden-import=CacheManager --hidden-import=GUIManager --hidden-import=APIClient MagnetLinker/MagnetApp.py
+
+      # Optional: Create a DMG from the .app bundle
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Create DMG
+        run: |
+          create-dmg dist/MagnetLinker.app
+
+      - name: Upload Build Artifact - MagnetLinker
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: MagnetLinker
+          path: |
+            dist/MagnetLinker.app
+            dist/MagnetLinker*.dmg
