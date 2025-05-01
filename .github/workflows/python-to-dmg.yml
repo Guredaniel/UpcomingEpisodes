@@ -1,7 +1,8 @@
 # This workflow will install Python dependencies, run tests and lint with a single version of Python
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
-name: Python application
+name: python-to-dmg
+# This workflow will build a macOS application and create a DMG file for distribution
 
 on:
   workflow_dispatch:  # Allows manual triggering of the workflow
@@ -44,7 +45,7 @@ jobs:
 
       - name: Create DMG
         run: |
-          create-dmg dist/MagnetLinker.app --overwrite --dmg-title="MagnetLinker" dist/MagnetLinker.dmg
+          create-dmg dist/MagnetLinker.dmg dist/MagnetLinker.app --overwrite --title="MagnetLinker"
 
       - name: Upload Build Artifact - MagnetLinker
         uses: actions/upload-artifact@v4.6.2
