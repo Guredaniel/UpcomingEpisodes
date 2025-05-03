@@ -17,15 +17,35 @@ if sys.platform.startswith("win32"):
 
 class GUIManager:
     def __init__(self, root, cache_manager, api_client):
-        self.root = root  # Assign root first!
-        # Suppress Tkinter deprecation warning on macOS
         if sys.platform == "darwin":
+            self.root = root
+            self.root.withdraw()  # Hide the window
+            # On macOS, ensure the dock icon is hidden
+            import objc
+            from Foundation import NSObject
+            self.root.createcommand('tk::mac::ReopenApplication', self.dummyCallback)
+            self.root.createcommand('::tk::mac::OnHide', self.dummyCallback)
+            self.root.createcommand('::tk::mac::OnShow', self.dummyCallback)
+            # Hide dock icon
+            from AppKit import NSApp
+            NSApp().setActivationPolicy_(1)  # NSApplicationActivationPolicyAccessory
             os.environ["TK_SILENCE_DEPRECATION"] = "1"
+        else:
+            self.root = root
+            self.root.withdraw()  # Hide the main window immediately
             
+            # Set window attributes to keep it hidden from taskbar
+            if sys.platform.startswith("win32"):
+                self.root.attributes('-alpha', 0)  # Make fully transparent
+                # Remove from taskbar on Windows
+                self.root.attributes('-toolwindow', True)
+
+        self.cache_manager = cache_manager
+        self.api_client = api_client
+                  
         # Configure root window properties
         self.root.resizable(False, False)
         self.root.title("MagnetLinker")
-        self.root.geometry("1x1")  # Minimal size since we don't show the main window
         
         self.cache_manager = cache_manager
         self.api_client = api_client
@@ -50,13 +70,10 @@ class GUIManager:
 
         # Preload the settings window at startup
         self.load_settings_window()
-
-        # Hide the main window appropriately for the platform
+        self.root.withdraw()
+        # Create the mac settings
         if sys.platform == "darwin":
-            self.root.withdraw()  # On macOS, withdraw instead of iconify
             self.create_mac_settings_button()
-        else:
-            self.root.withdraw()
 
         # Start monitoring the clipboard if enabled
         if self.monitor_clipboard_enabled:
@@ -71,6 +88,10 @@ class GUIManager:
 
         # Start the Tk event loop to keep the application running
         self.root.mainloop()
+
+    def dummyCallback(self, *args):
+        """Empty callback for macOS window management"""
+        pass
 
     def create_mac_settings_button(self):
         """Create a small floating window with tray actions for macOS."""
