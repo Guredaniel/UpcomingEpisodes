@@ -99,7 +99,6 @@ class GUIManager:
         self.mac_settings_win.title("MagnetLinker")
         self.mac_settings_win.geometry("180x220")
         self.mac_settings_win.resizable(False, False)
-        self.mac_settings_win.attributes("-topmost", True)
         self.mac_settings_win.protocol("WM_DELETE_WINDOW", lambda: self.root.quit())  # Prevent closing
 
         btn_frame = tk.Frame(self.mac_settings_win)
@@ -164,6 +163,8 @@ class GUIManager:
         # Override window close behavior to hide rather than destroy it.
         self.settings_window.protocol("WM_DELETE_WINDOW", self.settings_window.withdraw)
         self.settings_window.resizable(False, False)
+        # Make window stay on top
+        self.settings_window.attributes('-topmost', True)
 
         # Main frame for settings
         main_frame = CTkFrame(self.settings_window, fg_color="#1A1A1A", corner_radius=10, border_width=1, border_color="#333333")
@@ -501,6 +502,7 @@ class GUIManager:
 
             prompt_win = CTkToplevel(self.root)
             prompt_win.title("MagnetLinker - Content Type")
+            prompt_win.attributes("-topmost", True)
             if self.prompt_win_geometry:
                 prompt_win.geometry(f"320x170{self.prompt_win_geometry}")
             else:
@@ -658,6 +660,7 @@ class GUIManager:
             # Create a prompt window to choose between Movie and Series
             prompt_win = CTkToplevel(self.root)
             prompt_win.title("MagnetLinker - Content Type")
+            prompt_win.attributes("-topmost", True)
             prompt_win.geometry("320x120")
             prompt_win.configure(fg_color="black")
             prompt_win.lift()

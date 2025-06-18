@@ -14,6 +14,7 @@ def main():
     # Prevent the root window from ever being shown
     root.overrideredirect(True)
     root.attributes('-alpha', 0)  # Make it fully transparent
+    root.attributes('-topmost', True)  # Make window stay on top
     
     if sys.platform == "darwin":
         # Hide dock icon on macOS
