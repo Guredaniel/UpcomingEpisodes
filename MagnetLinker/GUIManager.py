@@ -159,26 +159,38 @@ class GUIManager:
         """
         self.settings_window = CTkToplevel(self.root)
         self.settings_window.title("MagnetLinker - Settings")
-        self.settings_window.geometry("350x360")
+        self.settings_window.geometry("400x420")
         # Override window close behavior to hide rather than destroy it.
         self.settings_window.protocol("WM_DELETE_WINDOW", self.settings_window.withdraw)
         self.settings_window.resizable(False, False)
         # Make window stay on top
         self.settings_window.attributes('-topmost', True)
 
-        # Main frame for settings
-        main_frame = CTkFrame(self.settings_window, fg_color="#1A1A1A", corner_radius=10, border_width=1, border_color="#333333")
-        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        # Main frame for settings with a modern gradient background effect
+        main_frame = CTkFrame(self.settings_window, fg_color=("#2B2B2B", "#1A1A1A"), corner_radius=15, 
+                             border_width=2, border_color=("#444444", "#333333"))
+        main_frame.pack(fill="both", expand=True, padx=15, pady=15)
 
-        # Add a title label
-        title_label = CTkLabel(main_frame, text="Settings", text_color="white")
-        title_label.pack(pady=(10, 0))
+        # Add a stylish header
+        header_frame = CTkFrame(main_frame, fg_color="transparent")
+        header_frame.pack(fill="x", padx=15, pady=(15, 5))
+        
+        title_label = CTkLabel(header_frame, text="Settings", 
+                              font=CTkFont(family=self.ctk_default_font.cget("family"), 
+                                         size=20, weight="bold"),
+                              text_color=("#FFFFFF", "#E0E0E0"))
+        title_label.pack(side="left")
 
-        # Create the tabview
-        self.settings_tabview = CTkTabview(main_frame, fg_color="#1A1A1A", segmented_button_fg_color="gray25",
-                             segmented_button_selected_color="#3E3E3E", segmented_button_unselected_color="gray25",
-                             text_color="white")
-        self.settings_tabview.pack(fill="both", expand=True, padx=10)
+        # Create the tabview with modern styling
+        self.settings_tabview = CTkTabview(main_frame, 
+                                         fg_color=("gray90", "gray17"),
+                                         segmented_button_fg_color=("gray80", "gray20"),
+                                         segmented_button_selected_color=("#1E90FF", "#2979FF"),
+                                         segmented_button_selected_hover_color=("#1976D2", "#2962FF"),
+                                         segmented_button_unselected_color=("gray75", "gray23"),
+                                         segmented_button_unselected_hover_color=("gray70", "gray25"),
+                                         text_color=("gray20", "gray90"))
+        self.settings_tabview.pack(fill="both", expand=True, padx=15, pady=(10, 5))
 
         # Add tabs
         self.settings_tabview.add("General")
@@ -430,8 +442,14 @@ class GUIManager:
            If the skip checkbox is checked when making a selection, that choice is cached.
         """
         try:
-            if not magnet_url.startswith("magnet:"):
+            if not magnet_url or not isinstance(magnet_url, str):
+                self.handle_error("No valid magnet link found in clipboard")
                 return
+                
+            if not magnet_url.startswith("magnet:"):
+                self.handle_error("Invalid magnet link format")
+                return
+                
             if not self.cache_manager.credentials_exist():
                 self.root.after(0, self.prompt_qbittorrent_credentials)
                 return
@@ -504,9 +522,9 @@ class GUIManager:
             prompt_win.title("MagnetLinker - Content Type")
             prompt_win.attributes("-topmost", True)
             if self.prompt_win_geometry:
-                prompt_win.geometry(f"320x170{self.prompt_win_geometry}")
+                prompt_win.geometry(f"320x180{self.prompt_win_geometry}")
             else:
-                prompt_win.geometry("320x170")
+                prompt_win.geometry("320x180")
             prompt_win.resizable(False, False)
             prompt_win.configure(fg_color="black")
             prompt_win.lift()
@@ -518,14 +536,14 @@ class GUIManager:
                     prompt_win,
                     text="A magnet link was detected in the clipboard.\nIs this a movie or a series?",
                     text_color="white",
-                    font=self.ctk_default_font
+                    font=CTkFont(family=self.ctk_default_font.cget("family"), size=14, weight="normal")
                 )
             else:
                 prompt_label = CTkLabel(
                     prompt_win,
                     text="Is this a movie or a series?",
                     text_color="white",
-                    font=self.ctk_default_font
+                    font=CTkFont(family=self.ctk_default_font.cget("family"), size=14, weight="normal")
                 )
             prompt_label.pack(pady=10)
 
@@ -533,13 +551,15 @@ class GUIManager:
             indefinite_var = tk.BooleanVar(value=False)
             checkbox_frame = CTkFrame(prompt_win, fg_color="black")
             checkbox_frame.pack(pady=5)
+            dialog_font = CTkFont(family=self.ctk_default_font.cget("family"), size=14, weight="normal")
+            
             skip_checkbox = CTkCheckBox(
                 checkbox_frame, 
                 text=f"Remember for {self.cache_duration_minutes} minutes", 
                 variable=skip_var, 
                 text_color="white",
                 command=lambda: self.handle_checkbox_toggle(skip_var, indefinite_var),
-                font=self.ctk_default_font
+                font=dialog_font
             )
             skip_checkbox.pack(anchor="w", pady=2)
             indefinite_checkbox = CTkCheckBox(
@@ -548,7 +568,7 @@ class GUIManager:
                 variable=indefinite_var, 
                 text_color="white",
                 command=lambda: self.handle_checkbox_toggle(indefinite_var, skip_var),
-                font=self.ctk_default_font
+                font=dialog_font
             )
             indefinite_checkbox.pack(anchor="w", pady=2)
             button_frame = CTkFrame(prompt_win, fg_color="black")
@@ -558,7 +578,7 @@ class GUIManager:
                 text="Movie",
                 command=lambda: on_select("Movie"),
                 text_color="white",
-                font=self.ctk_default_font
+                font=dialog_font
             )
             movie_button.grid(row=0, column=0, padx=10)
             series_button = CTkButton(
@@ -566,12 +586,13 @@ class GUIManager:
                 text="Series",
                 command=lambda: on_select("Series"),
                 text_color="white",
-                font=self.ctk_default_font
+                font=dialog_font
             )
             series_button.grid(row=0, column=1, padx=10)
 
             # macOS fix: force redraw
-            prompt_win.update()
+            if sys.platform == "darwin":
+                prompt_win.update()
         except (ConnectionError, TimeoutError) as e:
             self.handle_error(f"Network error: {e}")
         except Exception as e:
@@ -643,6 +664,11 @@ class GUIManager:
         Calls the APIClient's open_qbittorrent_with_torrent_file function.
         """
         try:
+            if not self.cache_manager.credentials_exist():
+                self.handle_error("No qBittorrent credentials found. Please set them first.")
+                self.prompt_qbittorrent_credentials(magnet=False)
+                return
+
             import tkinter.filedialog  # Ensure filedialog is available
             # Open file dialog to select a torrent file
             torrent_file_path = tkinter.filedialog.askopenfilename(
@@ -696,17 +722,46 @@ class GUIManager:
         Callback triggered when the user selects 'Exit' from the tray menu.
         Stops the system tray icon.
         """
-        icon.stop()
-        # Signal tasks to stop
-        self.should_exit = True
-        
-        # Join tray_thread if it's alive and not the current thread
-        if hasattr(self, "tray_thread") and self.tray_thread.is_alive() and threading.current_thread() is not self.tray_thread:
-            self.tray_thread.join(timeout=3)
-        
-        # Stop the Tk main loop and close the application window
-        self.root.quit()
-        self.root.destroy()
+        try:
+            # Signal tasks to stop
+            self.should_exit = True
+            
+            # Stop the tray icon first
+            icon.stop()
+            
+            # Join tray_thread if it's alive and not the current thread
+            if hasattr(self, "tray_thread") and self.tray_thread.is_alive() and threading.current_thread() is not self.tray_thread:
+                self.tray_thread.join(timeout=1)
+            
+            # Schedule the window destruction after other operations
+            self.root.after(100, self._cleanup_and_exit)
+        except Exception as e:
+            print(f"Error during exit: {e}")
+            # Force exit if normal cleanup fails
+            import os
+            os._exit(0)
+            
+    def _cleanup_and_exit(self):
+        """Helper method to clean up and exit the application"""
+        try:
+            # Destroy all top-level windows
+            for widget in self.root.winfo_children():
+                if isinstance(widget, (CTkToplevel, tk.Toplevel)):
+                    widget.destroy()
+            
+            # Reset window attributes before destroying
+            if sys.platform.startswith("win32"):
+                self.root.attributes('-alpha', 1)
+                self.root.attributes('-toolwindow', False)
+            
+            # Finally destroy the root window and quit
+            self.root.destroy()
+            self.root.quit()
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+            # Force exit if normal cleanup fails
+            import os
+            os._exit(0)
 
     def reset_selection(self):
         """Reset the cached selection and indefinite flag"""
@@ -717,7 +772,6 @@ class GUIManager:
     def create_tray_menu(self):
         return Menu(
             MenuItem('Open qBittorrent', lambda icon, item: self.api_client.open_qbittorrent_web()),
-            MenuItem('Send magnet link', lambda icon, item: self.open_qbittorrent_with_magnet(pyperclip.paste(), from_clipboard=False)),
             MenuItem('Send torrent file', lambda icon, item: self.open_qbittorrent_with_torrent_file()),
             MenuItem('Reset selection', lambda icon, item: self.reset_selection()),
             MenuItem('Settings', lambda icon, item: self.on_settings(icon, item)),
