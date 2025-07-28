@@ -1,4 +1,3 @@
-
 from CacheManager import CacheManager
 import requests
 import webbrowser
@@ -25,7 +24,8 @@ class APIClient:
             login_url = f"{self.qbittorrent_url}api/v2/auth/login"
             login_data = {"username": username, "password": password}
             session = requests.Session()
-            login_response = session.post(login_url, data=login_data)
+            # Add timeout to login request
+            login_response = session.post(login_url, data=login_data, timeout=10)
             
             if login_response.status_code != 200:
                 raise Exception(f"Failed to login to qBittorrent: {login_response.text}")
@@ -38,8 +38,8 @@ class APIClient:
             if save_path:
                 data["savepath"] = save_path
             
-            # Send the magnet URL to the qBittorrent web interface
-            response = session.post(qbittorrent_url, data=data)
+            # Send the magnet URL to the qBittorrent web interface with timeout
+            response = session.post(qbittorrent_url, data=data, timeout=10)
             
             if response.status_code != 200:
                 raise Exception(f"Failed to add torrent: {response.text}")
@@ -66,7 +66,8 @@ class APIClient:
             login_url = f"{self.qbittorrent_url}api/v2/auth/login"
             login_data = {"username": username, "password": password}
             session = requests.Session()
-            login_response = session.post(login_url, data=login_data)
+            # Add timeout to login request
+            login_response = session.post(login_url, data=login_data, timeout=10)
             
             if login_response.status_code != 200:
                 raise Exception(f"Failed to login to qBittorrent: {login_response.text}")
@@ -82,7 +83,8 @@ class APIClient:
             # Open the torrent file in binary mode and send it as multipart data
             with open(torrent_file_path, "rb") as torrent_file:
                 files = {"torrents": torrent_file}
-                response = session.post(add_torrent_url, data=data, files=files)
+                # Add timeout to torrent upload request
+                response = session.post(add_torrent_url, data=data, files=files, timeout=20)
             
             if response.status_code != 200:
                 raise Exception(f"Failed to add torrent: {response.text}")
