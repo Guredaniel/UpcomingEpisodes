@@ -189,25 +189,25 @@ class GUIManager:
         self.configure_ctk_label(sites_tab, "rutor URL:")
         rutor_entry = CTkEntry(sites_tab, width=40, fg_color="gray25", text_color="white")
         rutor_entry.insert(0, self.site_rutor_url)
-        rutor_entry.pack(pady=(0, 4), padx=10, fill=tk.X)
+        rutor_entry.pack(pady=(0, 2), padx=10, fill=tk.X)
         rutor_entry.bind("<FocusOut>", lambda e: self.save_site_setting('site_rutor_url', rutor_entry.get().strip()))
 
         self.configure_ctk_label(sites_tab, "yts.mx URL:")
         yts_entry = CTkEntry(sites_tab, width=40, fg_color="gray25", text_color="white")
         yts_entry.insert(0, self.site_yts_url)
-        yts_entry.pack(pady=(0, 4), padx=10, fill=tk.X)
+        yts_entry.pack(pady=(0, 2), padx=10, fill=tk.X)
         yts_entry.bind("<FocusOut>", lambda e: self.save_site_setting('site_yts_url', yts_entry.get().strip()))
 
         self.configure_ctk_label(sites_tab, "ext.to URL:")
         ext_entry = CTkEntry(sites_tab, width=40, fg_color="gray25", text_color="white")
         ext_entry.insert(0, self.site_ext_url)
-        ext_entry.pack(pady=(0, 4), padx=10, fill=tk.X)
+        ext_entry.pack(pady=(0, 2), padx=10, fill=tk.X)
         ext_entry.bind("<FocusOut>", lambda e: self.save_site_setting('site_ext_url', ext_entry.get().strip()))
 
         self.configure_ctk_label(sites_tab, "nyaa.si URL:")
         nyaa_entry = CTkEntry(sites_tab, width=40, fg_color="gray25", text_color="white")
         nyaa_entry.insert(0, self.site_nyaa_url)
-        nyaa_entry.pack(pady=(0, 4), padx=10, fill=tk.X)
+        nyaa_entry.pack(pady=(0, 2), padx=10, fill=tk.X)
         nyaa_entry.bind("<FocusOut>", lambda e: self.save_site_setting('site_nyaa_url', nyaa_entry.get().strip()))
 
     def save_site_setting(self, key, value):
@@ -237,7 +237,7 @@ class GUIManager:
         """
         self.settings_window = CTkToplevel(self.root)
         self.settings_window.title("MagnetLinker - Settings")
-        self.settings_window.geometry("400x420")
+        self.settings_window.geometry("400x460")
         # Override window close behavior to hide rather than destroy it.
         self.settings_window.protocol("WM_DELETE_WINDOW", self.settings_window.withdraw)
         self.settings_window.resizable(False, False)
