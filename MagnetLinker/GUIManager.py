@@ -59,6 +59,12 @@ class GUIManager:
         self.monitor_clipboard_enabled = self.cache_manager.load_setting("monitor_clipboard_enabled", True)
         self.add_to_startup = self.cache_manager.load_setting("add_to_startup", False)
 
+        # Sites settings (defaults provided)
+        self.site_rutor_url = self.cache_manager.load_setting("site_rutor_url", "https://rutor.info")
+        self.site_yts_url = self.cache_manager.load_setting("site_yts_url", "https://yts.mx")
+        self.site_ext_url = self.cache_manager.load_setting("site_ext_url", "https://ext.to")
+        self.site_nyaa_url = self.cache_manager.load_setting("site_nyaa_url", "https://nyaa.si")
+
         # Initialize termination flag to signal tasks to stop
         self.should_exit = False
         self.prompt_win_geometry = None  # Attribute to store prompt window geometry
@@ -97,7 +103,7 @@ class GUIManager:
         """Create a small floating window with tray actions for macOS."""
         self.mac_settings_win = tk.Toplevel(self.root)
         self.mac_settings_win.title("MagnetLinker")
-        self.mac_settings_win.geometry("180x220")
+        self.mac_settings_win.geometry("180x290")
         self.mac_settings_win.resizable(False, False)
         self.mac_settings_win.protocol("WM_DELETE_WINDOW", lambda: self.root.quit())  # Prevent closing
 
@@ -128,6 +134,27 @@ class GUIManager:
             height=1
         ).pack(fill="x", pady=2)
 
+        # Site buttons arranged in a 2x2 grid (build but only pack when enabled)
+        self.sites_frame = tk.Frame(btn_frame)
+
+        self.rutor_btn = tk.Button(self.sites_frame, text="rutor", command=lambda: webbrowser.open(self.site_rutor_url), width=9, height=1)
+        self.yts_btn = tk.Button(self.sites_frame, text="yts.mx", command=lambda: webbrowser.open(self.site_yts_url), width=9, height=1)
+        self.ext_btn = tk.Button(self.sites_frame, text="ext.to", command=lambda: webbrowser.open(self.site_ext_url), width=9, height=1)
+        self.nyaa_btn = tk.Button(self.sites_frame, text="nyaa.si", command=lambda: webbrowser.open(self.site_nyaa_url), width=9, height=1)
+
+        # Place buttons in 2 columns
+        self.rutor_btn.grid(row=0, column=0, padx=0, pady=2, sticky="ew")
+        self.yts_btn.grid(row=0, column=1, padx=0, pady=2, sticky="ew")
+        self.ext_btn.grid(row=1, column=0, padx=0, pady=2, sticky="ew")
+        self.nyaa_btn.grid(row=1, column=1, padx=0, pady=2, sticky="ew")
+
+        # Make columns expand evenly
+        self.sites_frame.grid_columnconfigure(0, weight=1)
+        self.sites_frame.grid_columnconfigure(1, weight=1)
+
+        # Always show sites
+        self.sites_frame.pack(fill="x", pady=(6, 6))
+
         tk.Button(
             btn_frame,
             text="Reset selection",
@@ -151,6 +178,57 @@ class GUIManager:
             width=18,
             height=1
         ).pack(fill="x", pady=2)
+
+    def setup_sites_tab(self):
+        """Create the Sites tab allowing toggle and URL editing for each site."""
+        sites_tab = self.settings_tabview.tab("Sites")
+
+        # URL entries for each site (always shown in mac window)
+
+        # URL entries for each site
+        self.configure_ctk_label(sites_tab, "rutor URL:")
+        rutor_entry = CTkEntry(sites_tab, width=40, fg_color="gray25", text_color="white")
+        rutor_entry.insert(0, self.site_rutor_url)
+        rutor_entry.pack(pady=(0, 4), padx=10, fill=tk.X)
+        rutor_entry.bind("<FocusOut>", lambda e: self.save_site_setting('site_rutor_url', rutor_entry.get().strip()))
+
+        self.configure_ctk_label(sites_tab, "yts.mx URL:")
+        yts_entry = CTkEntry(sites_tab, width=40, fg_color="gray25", text_color="white")
+        yts_entry.insert(0, self.site_yts_url)
+        yts_entry.pack(pady=(0, 4), padx=10, fill=tk.X)
+        yts_entry.bind("<FocusOut>", lambda e: self.save_site_setting('site_yts_url', yts_entry.get().strip()))
+
+        self.configure_ctk_label(sites_tab, "ext.to URL:")
+        ext_entry = CTkEntry(sites_tab, width=40, fg_color="gray25", text_color="white")
+        ext_entry.insert(0, self.site_ext_url)
+        ext_entry.pack(pady=(0, 4), padx=10, fill=tk.X)
+        ext_entry.bind("<FocusOut>", lambda e: self.save_site_setting('site_ext_url', ext_entry.get().strip()))
+
+        self.configure_ctk_label(sites_tab, "nyaa.si URL:")
+        nyaa_entry = CTkEntry(sites_tab, width=40, fg_color="gray25", text_color="white")
+        nyaa_entry.insert(0, self.site_nyaa_url)
+        nyaa_entry.pack(pady=(0, 4), padx=10, fill=tk.X)
+        nyaa_entry.bind("<FocusOut>", lambda e: self.save_site_setting('site_nyaa_url', nyaa_entry.get().strip()))
+
+    def save_site_setting(self, key, value):
+        """Save a site URL to cache and update the button command/live URL."""
+        if not value:
+            return
+        self.cache_manager.save_setting(key, value)
+        setattr(self, key, value)
+        # Update button commands if the sites_frame exists
+        try:
+            if key == 'site_rutor_url' and hasattr(self, 'rutor_btn'):
+                self.rutor_btn.configure(command=lambda: webbrowser.open(self.site_rutor_url))
+            elif key == 'site_yts_url' and hasattr(self, 'yts_btn'):
+                self.yts_btn.configure(command=lambda: webbrowser.open(self.site_yts_url))
+            elif key == 'site_ext_url' and hasattr(self, 'ext_btn'):
+                self.ext_btn.configure(command=lambda: webbrowser.open(self.site_ext_url))
+            elif key == 'site_nyaa_url' and hasattr(self, 'nyaa_btn'):
+                self.nyaa_btn.configure(command=lambda: webbrowser.open(self.site_nyaa_url))
+        except Exception:
+            pass
+        
 
     def load_settings_window(self):
         """
@@ -195,11 +273,13 @@ class GUIManager:
         # Add tabs
         self.settings_tabview.add("General")
         self.settings_tabview.add("qBittorrent")
+        self.settings_tabview.add("Sites")
         self.settings_tabview.add("Directories")
         self.settings_tabview.set("General")  # Show General by default
 
         self.setup_general_tab()
         self.setup_qbittorrent_tab()
+        self.setup_sites_tab()
         self.setup_directories_tab()
 
         # Create error message label above control frame
