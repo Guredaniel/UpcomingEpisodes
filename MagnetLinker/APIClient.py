@@ -108,3 +108,36 @@ class APIClient:
                 return False, f"Connection failed: {response.status_code} {response.reason}"
         except requests.exceptions.RequestException as e:
             return False, f"Connection failed: {e}"
+    
+    def test_connection(self, url, username=None, password=None):
+        """Test connection to qBittorrent with optional custom credentials.
+        
+        Args:
+            url: The qBittorrent URL to test
+            username: Optional username (uses cached if None)
+            password: Optional password (uses cached if None)
+            
+        Returns:
+            bool: True if connection successful, False otherwise
+        """
+        try:
+            # If credentials provided, test with those
+            if username and password:
+                login_url = f"{url}api/v2/auth/login"
+                login_data = {"username": username, "password": password}
+                session = requests.Session()
+                login_response = session.post(login_url, data=login_data, timeout=10)
+                
+                if login_response.status_code == 200:
+                    return True
+                else:
+                    raise Exception(f"Authentication failed: {login_response.status_code}")
+            else:
+                # Test basic connection
+                response = requests.get(url, timeout=5)
+                if response.status_code == 200:
+                    return True
+                else:
+                    raise Exception(f"Connection failed: {response.status_code}")
+        except Exception as e:
+            raise Exception(str(e))

@@ -8,27 +8,39 @@ def main():
     cache_manager = CacheManager()
     api_client = APIClient(cache_manager)
 
-    root = CTk()
-    root.withdraw()  # Hide the window immediately
-    
-    # Prevent the root window from ever being shown
-    root.overrideredirect(True)
-    root.attributes('-alpha', 0)  # Make it fully transparent
-    root.attributes('-topmost', True)  # Make window stay on top
-    
     if sys.platform == "darwin":
-        # Hide dock icon on macOS
+        # Use native macOS GUI with rumps menu bar
         try:
-            from AppKit import NSApp
-            NSApp().setActivationPolicy_(1)  # NSApplicationActivationPolicyAccessory
+            from MacOSGUIManager import MacOSGUIManager
+            gui_manager = MacOSGUIManager(cache_manager, api_client)
+            gui_manager.run()
         except ImportError:
-            pass
+            # Fall back to regular GUI if MacOSGUIManager is not available
+            print("Warning: MacOSGUIManager not available, using fallback GUI")
+            root = CTk()
+            root.withdraw()
+            root.overrideredirect(True)
+            root.attributes('-alpha', 0)
+            root.attributes('-topmost', True)
             
-    # Initialize GUI manager
-    gui_manager = GUIManager(root, cache_manager, api_client)
-    
-    # Start the event loop
-    root.mainloop()
+            try:
+                from AppKit import NSApp
+                NSApp().setActivationPolicy_(1)
+            except ImportError:
+                pass
+            
+            gui_manager = GUIManager(root, cache_manager, api_client)
+            root.mainloop()
+    else:
+        # Use cross-platform GUI for Windows/Linux
+        root = CTk()
+        root.withdraw()
+        root.overrideredirect(True)
+        root.attributes('-alpha', 0)
+        root.attributes('-topmost', True)
+        
+        gui_manager = GUIManager(root, cache_manager, api_client)
+        root.mainloop()
 
 if __name__ == "__main__":
     main()
