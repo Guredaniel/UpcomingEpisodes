@@ -93,6 +93,10 @@ class CacheManager:
         credentials_path = os.path.join(self.get_cache_directory(), "qbittorrent_credentials.json")
         return os.path.exists(credentials_path)
     
+    def clear_credentials(self):
+        """Clear saved qBittorrent credentials. Alias for delete_login_cache."""
+        return self.delete_login_cache()
+    
     def save_setting(self, key, value):
         """Save a setting to the cache."""
         settings_path = os.path.join(self.get_cache_directory(), "settings.json")

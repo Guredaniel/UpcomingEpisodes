@@ -38,6 +38,47 @@ class SettingsWindowDelegate(NSObject):
             pass
 
 
+# Helper class for handling button target/action in Cocoa
+# This is needed because Python classes can't be used as Cocoa targets directly
+class SettingsActionHandler(NSObject):
+    """Objective-C compatible handler for settings button actions."""
+    
+    def initWithManager_(self, manager):
+        self = objc.super(SettingsActionHandler, self).init()
+        if self is None:
+            return None
+        self.manager = manager
+        return self
+    
+    def saveSettingsClicked_(self, sender):
+        """Handle save button click."""
+        if hasattr(self.manager, '_save_all_settings'):
+            self.manager._save_all_settings()
+        if hasattr(self.manager, '_close_settings_'):
+            self.manager._close_settings_(sender)
+    
+    def closeSettingsClicked_(self, sender):
+        """Handle cancel button click."""
+        if hasattr(self.manager, '_close_settings_'):
+            self.manager._close_settings_(sender)
+    
+    def sidebarClicked_(self, sender):
+        """Handle sidebar item click."""
+        if hasattr(self.manager, '_show_settings_section'):
+            section_name = sender.title()
+            self.manager._show_settings_section(section_name)
+    
+    def testConnectionClicked_(self, sender):
+        """Handle test connection button click."""
+        if hasattr(self.manager, '_settings_test_connection_'):
+            self.manager._settings_test_connection_(sender)
+    
+    def clearCredentialsClicked_(self, sender):
+        """Handle clear credentials button click."""
+        if hasattr(self.manager, '_settings_clear_credentials_'):
+            self.manager._settings_clear_credentials_(sender)
+
+
 class MacOSGUIManager:
     """macOS-native GUI manager using rumps menu bar and PyObjC Cocoa dialogs."""
     
@@ -92,6 +133,9 @@ class MacOSGUIManager:
         # Create the rumps app
         self._create_menu_bar_app()
         
+        # Hide from dock - only show in menu bar
+        NSApplication.sharedApplication().setActivationPolicy_(1)
+        
         # Setup auto-launch on initialization
         self._setup_auto_launch()
         
@@ -136,9 +180,9 @@ class MacOSGUIManager:
 </plist>"""
             
             # Create LaunchAgents directory if it doesn't exist
-            launch_agents_dir = os.path.expanduser("~/.local/share/LaunchAgents")
+            launch_agents_dir = os.path.expanduser("~/Library/LaunchAgents")
             if not os.path.exists(launch_agents_dir):
-                os.makedirs(launch_agents_dir, mode=0o700)
+                os.makedirs(launch_agents_dir, mode=0o755)
             
             # Write plist file
             plist_path = os.path.join(launch_agents_dir, "com.magnetlinker.app.plist")
@@ -163,7 +207,7 @@ class MacOSGUIManager:
         try:
             import subprocess
             
-            plist_path = os.path.expanduser("~/.local/share/LaunchAgents/com.magnetlinker.app.plist")
+            plist_path = os.path.expanduser("~/Library/LaunchAgents/com.magnetlinker.app.plist")
             
             if os.path.exists(plist_path):
                 # Unload the LaunchAgent
@@ -203,6 +247,7 @@ class MacOSGUIManager:
             None,  # Separator
             self._create_sites_submenu(),
             None,  # Separator
+            rumps.MenuItem("Clear Credentials", callback=self._menu_clear_credentials),
             rumps.MenuItem("Reset Selection", callback=self._menu_reset_selection),
             rumps.MenuItem("Preferences", callback=self._menu_settings),
             None,  # Separator
@@ -274,6 +319,11 @@ class MacOSGUIManager:
         """Menu callback: Toggle clipboard monitoring."""
         self.monitor_clipboard_enabled = not self.monitor_clipboard_enabled
         self.cache_manager.save_setting("monitor_clipboard_enabled", self.monitor_clipboard_enabled)
+        
+        # Start the monitor thread if enabling and not already running
+        if self.monitor_clipboard_enabled and not self.clipboard_monitor_running:
+            self._start_clipboard_monitor()
+        
         status = "enabled" if self.monitor_clipboard_enabled else "disabled"
         self._show_notification("Clipboard Monitoring", f"Clipboard monitoring is now {status}.")
     
@@ -339,6 +389,12 @@ class MacOSGUIManager:
             return
         
         # No magnet link found, show error
+        # Activate app to bring dialog to front
+        try:
+            NSApp().activateIgnoringOtherApps_(True)
+        except Exception:
+            pass
+        
         alert = NSAlert.alloc().init()
         alert.setMessageText_("No Magnet Link Detected")
         alert.setInformativeText_("No magnet link found in clipboard or cache.\n\nPlease copy a magnet link first.")
@@ -364,6 +420,12 @@ class MacOSGUIManager:
                 return
             
             print(f"[DEBUG] Credentials exist, showing content type dialog")
+            
+            # Activate app to bring dialog to front
+            try:
+                NSApp().activateIgnoringOtherApps_(True)
+            except Exception:
+                pass
             
             # Check for cached selection
             if self.cached_selection is not None:
@@ -487,6 +549,12 @@ class MacOSGUIManager:
         Returns:
             bool: True if credentials were entered, False if cancelled
         """
+        # Activate app to bring dialog to front
+        try:
+            NSApp().activateIgnoringOtherApps_(True)
+        except Exception:
+            pass
+        
         alert = NSAlert.alloc().init()
         alert.setMessageText_("qBittorrent Credentials")
         alert.setInformativeText_("Enter your qBittorrent credentials:")
@@ -550,6 +618,12 @@ class MacOSGUIManager:
                     self.open_torrent_file()
                 return
             
+            # Activate app to bring dialog to front
+            try:
+                NSApp().activateIgnoringOtherApps_(True)
+            except Exception:
+                pass
+            
             # Create file open panel
             panel = NSOpenPanel.openPanel()
             panel.setTitle_("Select Torrent File")
@@ -604,6 +678,9 @@ class MacOSGUIManager:
         self._settings_fields = {}
         self._current_settings_section = "General"
         
+        # Create action handler for Cocoa target/action pattern
+        self._action_handler = SettingsActionHandler.alloc().initWithManager_(self)
+        
         # Create a window
         window = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             ((100, 100), (750, 550)),  # Compact window size with more height
@@ -613,6 +690,16 @@ class MacOSGUIManager:
         )
         window.setTitle_("Settings")
         window.center()
+        
+        # Set window to floating level so it appears above other windows
+        from AppKit import NSFloatingWindowLevel
+        window.setLevel_(NSFloatingWindowLevel)
+        
+        # Activate app to bring window to front
+        try:
+            NSApp().activateIgnoringOtherApps_(True)
+        except Exception:
+            pass
         
         # Create main container
         main_container = NSView.alloc().initWithFrame_(((0, 0), (750, 550)))
@@ -646,8 +733,8 @@ class MacOSGUIManager:
             button = self._create_enhanced_sidebar_button(item_name, icon_name, (12, y_pos))
             sidebar.addSubview_(button)
             self._sidebar_buttons[item_name] = button
-            button.setTarget_(self)
-            button.setAction_("_sidebar_clicked:")
+            button.setTarget_(self._action_handler)
+            button.setAction_("sidebarClicked:")
         
         # Create content area (right panel) with padding
         self._content_view = NSView.alloc().initWithFrame_(((200, 40), (550, 450)))
@@ -681,8 +768,8 @@ class MacOSGUIManager:
         save_button.setBezelStyle_(0)
         save_button.setButtonType_(0)
         save_button.setFont_(NSFont.systemFontOfSize_(12))
-        save_button.setTarget_(self)
-        save_button.setAction_("_save_settings_clicked:")
+        save_button.setTarget_(self._action_handler)
+        save_button.setAction_("saveSettingsClicked:")
         button_area.addSubview_(save_button)
         
         # Cancel button with enhanced styling
@@ -691,8 +778,8 @@ class MacOSGUIManager:
         cancel_button.setBezelStyle_(0)
         cancel_button.setButtonType_(0)
         cancel_button.setFont_(NSFont.systemFontOfSize_(12))
-        cancel_button.setTarget_(self)
-        cancel_button.setAction_("_close_settings:")
+        cancel_button.setTarget_(self._action_handler)
+        cancel_button.setAction_("closeSettingsClicked:")
         button_area.addSubview_(cancel_button)
         
         main_container.addSubview_(button_area)
@@ -1087,16 +1174,16 @@ class MacOSGUIManager:
         test_btn = NSButton.alloc().initWithFrame_(((30, y_pos), (150, 28)))
         test_btn.setTitle_("Test Connection")
         test_btn.setBezelStyle_(2)  # Rounded button
-        test_btn.setTarget_(self)
-        test_btn.setAction_("_settings_test_connection:")
+        test_btn.setTarget_(self._action_handler)
+        test_btn.setAction_("testConnectionClicked:")
         container.addSubview_(test_btn)
         
         # Clear Credentials button
         clear_btn = NSButton.alloc().initWithFrame_(((190, y_pos), (150, 28)))
         clear_btn.setTitle_("Clear Credentials")
         clear_btn.setBezelStyle_(2)  # Rounded button
-        clear_btn.setTarget_(self)
-        clear_btn.setAction_("_settings_clear_credentials:")
+        clear_btn.setTarget_(self._action_handler)
+        clear_btn.setAction_("clearCredentialsClicked:")
         container.addSubview_(clear_btn)
         
         self._content_view.addSubview_(container)
@@ -1191,18 +1278,6 @@ class MacOSGUIManager:
         if hasattr(self, '_settings_window'):
             self._settings_window.close()
             NSApp().stopModalWithCode_(0)
-    
-    def _create_directory_tab(self, tab_view):
-        """Create the Directory Settings tab. [Deprecated - Using sidebar navigation]"""
-        pass
-    
-    def _create_general_tab(self, tab_view):
-        """Create the General Settings tab. [Deprecated - Using sidebar navigation]"""
-        pass
-    
-    def _create_sites_tab(self, tab_view):
-        """Create the Sites Settings tab. [Deprecated - Using sidebar navigation]"""
-        pass
     
     def _create_modern_label(self, text, position):
         """Create a modern macOS style label."""
@@ -1397,13 +1472,16 @@ class MacOSGUIManager:
         Args:
             message: The error message to display
         """
+        # Try to copy to clipboard (non-critical)
         try:
-            # Copy to clipboard
             pasteboard = NSPasteboard.generalPasteboard()
             pasteboard.clearContents()
             pasteboard.setString_forType_(NSString.stringWithString_(message), NSPasteboardTypeString)
-            
-            # Show alert
+        except Exception:
+            pass  # Clipboard copy is optional
+        
+        # Show alert (critical)
+        try:
             alert = NSAlert.alloc().init()
             alert.setMessageText_("Error")
             alert.setInformativeText_(message)
@@ -1432,6 +1510,9 @@ class MacOSGUIManager:
     
     def run(self):
         """Start the rumps menu bar app."""
+        # Set flag before starting threads to avoid race condition
+        self.clipboard_monitor_running = True
+        
         # Start clipboard monitoring thread
         if self.monitor_clipboard_enabled:
             self._start_clipboard_monitor()
@@ -1460,11 +1541,14 @@ class MacOSGUIManager:
     
     def _start_clipboard_monitor(self):
         """Start the clipboard monitoring thread."""
+        # Set flag to indicate monitoring is running
+        self.clipboard_monitor_running = True
+        
         def monitor():
-            self.clipboard_monitor_running = True
             while self.clipboard_monitor_running:
                 try:
-                    self.check_clipboard()
+                    if self.monitor_clipboard_enabled:
+                        self.check_clipboard()
                     time.sleep(self.clipboard_check_interval)
                 except Exception as e:
                     print(f"[DEBUG] Monitor error: {e}")
