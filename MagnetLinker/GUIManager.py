@@ -892,6 +892,15 @@ class GUIManager:
         return Menu(
             MenuItem('Open qBittorrent', lambda icon, item: self.api_client.open_qbittorrent_web()),
             MenuItem('Send torrent file', lambda icon, item: self.open_qbittorrent_with_torrent_file()),
+            MenuItem(
+                'Sites',
+                Menu(
+                    MenuItem('rutor.info', lambda icon, item: webbrowser.open(self.site_rutor_url)),
+                    MenuItem('yts.mx', lambda icon, item: webbrowser.open(self.site_yts_url)),
+                    MenuItem('ext.to', lambda icon, item: webbrowser.open(self.site_ext_url)),
+                    MenuItem('nyaa.si', lambda icon, item: webbrowser.open(self.site_nyaa_url))
+                )
+            ),
             MenuItem('Reset selection', lambda icon, item: self.reset_selection()),
             MenuItem('Settings', lambda icon, item: self.on_settings(icon, item)),
             Menu.SEPARATOR,
