@@ -65,6 +65,9 @@ class GUIManager:
         self.site_ext_url = self.cache_manager.load_setting("site_ext_url", "https://ext.to")
         self.site_nyaa_url = self.cache_manager.load_setting("site_nyaa_url", "https://nyaa.si")
 
+        # Clipboard check interval (in seconds)
+        self.clipboard_check_interval = self.cache_manager.load_setting("clipboard_check_interval", 0.5)
+
         # Initialize termination flag to signal tasks to stop
         self.should_exit = False
         self.prompt_win_geometry = None  # Attribute to store prompt window geometry
@@ -237,7 +240,8 @@ class GUIManager:
         """
         self.settings_window = CTkToplevel(self.root)
         self.settings_window.title("MagnetLinker - Settings")
-        self.settings_window.geometry("400x460")
+        # Increase height to provide more vertical space for controls
+        self.settings_window.geometry("400x540")
         # Override window close behavior to hide rather than destroy it.
         self.settings_window.protocol("WM_DELETE_WINDOW", self.settings_window.withdraw)
         self.settings_window.resizable(False, False)
@@ -372,6 +376,25 @@ class GUIManager:
         # When entry changes, update the setting.
         duration_entry.bind("<KeyRelease>", lambda event: self.update_cache_duration(duration_entry.get().strip()))
 
+        # Clipboard check interval setting
+        interval_label = CTkLabel(general_tab, text="Clipboard check interval (seconds):", text_color="white")
+        interval_label.pack(anchor="w", padx=10, pady=(10, 0))
+        interval_entry = CTkEntry(general_tab, width=20, fg_color="gray25", text_color="white")
+        interval_entry.insert(0, str(self.clipboard_check_interval))
+        interval_entry.pack(anchor="w", padx=10, pady=(0, 5), fill=tk.X)
+        interval_entry.bind("<KeyRelease>", lambda event: self.update_clipboard_interval(interval_entry.get().strip()))
+        
+        # Help text for interval
+        interval_help = CTkLabel(
+            general_tab,
+            text="Lower = faster detection, higher CPU. (0.1–2.0 sec recommended)",
+            text_color="white",
+            font=CTkFont(size=10),
+            anchor="w",
+            justify="left"
+        )
+        interval_help.pack(anchor="w", padx=10, pady=(0, 10), fill="x")
+
     def setup_qbittorrent_tab(self):
         # Setup content for qbittorrent tab
         qbittorrent_tab = self.settings_tabview.tab("qBittorrent")
@@ -450,6 +473,21 @@ class GUIManager:
             # If conversion fails, do nothing or add error handling if desired.
             pass
 
+    def update_clipboard_interval(self, value):
+        """Update the clipboard check interval setting."""
+        try:
+            new_interval = float(value)
+            # Validate range
+            if new_interval < 0.1:
+                new_interval = 0.1
+            elif new_interval > 10.0:
+                new_interval = 10.0
+            self.clipboard_check_interval = new_interval
+            self.cache_manager.save_setting("clipboard_check_interval", new_interval)
+        except ValueError:
+            # If conversion fails, do nothing
+            pass
+
     def check_qbittorrent_connection(self, button):
         """Check the connection to the qBittorrent web interface and update the button text."""
         def run_check():
@@ -512,8 +550,9 @@ class GUIManager:
                 self.root.after(0, self.open_qbittorrent_with_magnet, current_clipboard, True)
         except Exception:
             pass
-        # Schedule next clipboard check in 2000ms (2 seconds)
-        self.root.after(2000, self.check_clipboard)
+        # Schedule next clipboard check based on configurable interval
+        interval_ms = int(self.clipboard_check_interval * 1000)
+        self.root.after(interval_ms, self.check_clipboard)
 
     def open_qbittorrent_with_magnet(self, magnet_url, from_clipboard=False):
         """Send the magnet link to the qBittorrent web interface with authentication.
@@ -853,6 +892,15 @@ class GUIManager:
         return Menu(
             MenuItem('Open qBittorrent', lambda icon, item: self.api_client.open_qbittorrent_web()),
             MenuItem('Send torrent file', lambda icon, item: self.open_qbittorrent_with_torrent_file()),
+            MenuItem(
+                'Sites',
+                Menu(
+                    MenuItem('rutor.info', lambda icon, item: webbrowser.open(self.site_rutor_url)),
+                    MenuItem('yts.mx', lambda icon, item: webbrowser.open(self.site_yts_url)),
+                    MenuItem('ext.to', lambda icon, item: webbrowser.open(self.site_ext_url)),
+                    MenuItem('nyaa.si', lambda icon, item: webbrowser.open(self.site_nyaa_url))
+                )
+            ),
             MenuItem('Reset selection', lambda icon, item: self.reset_selection()),
             MenuItem('Settings', lambda icon, item: self.on_settings(icon, item)),
             Menu.SEPARATOR,
