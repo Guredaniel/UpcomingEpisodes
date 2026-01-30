@@ -135,9 +135,27 @@ class MacOSGUIManager:
         
         # Hide from dock - only show in menu bar
         NSApplication.sharedApplication().setActivationPolicy_(1)
+
+        # Set application icon
+        icon = self._get_app_icon()
+        if icon:
+            NSApp().setApplicationIconImage_(icon)
         
         # Setup auto-launch on initialization
         self._setup_auto_launch()
+
+    def _get_app_icon(self):
+        """Get the application icon as NSImage."""
+        icon_path = None
+        for icon_file in ["icon.icns", "icon.png"]:
+            potential_path = os.path.join(os.path.dirname(__file__), icon_file)
+            if os.path.exists(potential_path):
+                icon_path = potential_path
+                break
+        
+        if icon_path:
+            return NSImage.alloc().initWithContentsOfFile_(icon_path)
+        return None
         
     def _setup_auto_launch(self):
         """Setup or remove LaunchAgent for auto-launch on login."""
@@ -347,6 +365,8 @@ class MacOSGUIManager:
     def _menu_clear_credentials(self, sender):
         """Menu callback: Clear saved credentials."""
         alert = NSAlert.alloc().init()
+        if self._get_app_icon():
+            alert.setIcon_(self._get_app_icon())
         alert.setMessageText_("Clear Credentials?")
         alert.setInformativeText_("Are you sure you want to remove the saved qBittorrent credentials?")
         alert.setAlertStyle_(NSAlertStyleWarning)
@@ -396,6 +416,8 @@ class MacOSGUIManager:
             pass
         
         alert = NSAlert.alloc().init()
+        if self._get_app_icon():
+            alert.setIcon_(self._get_app_icon())
         alert.setMessageText_("No Magnet Link Detected")
         alert.setInformativeText_("No magnet link found in clipboard or cache.\n\nPlease copy a magnet link first.")
         alert.setAlertStyle_(NSAlertStyleWarning)
@@ -445,6 +467,8 @@ class MacOSGUIManager:
             
             # Show content type dialog with remember option
             alert = NSAlert.alloc().init()
+            if self._get_app_icon():
+                alert.setIcon_(self._get_app_icon())
             alert.setMessageText_("Content Type")
             message = (
                 "A magnet link was detected in the clipboard.\n"
@@ -453,19 +477,6 @@ class MacOSGUIManager:
             )
             alert.setInformativeText_(message + "Is this a movie or a series?")
             alert.setAlertStyle_(NSAlertStyleInformational)
-            
-            # Set custom icon if available
-            icon_path = None
-            for icon_file in ["icon.icns", "icon.png"]:
-                potential_path = os.path.join(os.path.dirname(__file__), icon_file)
-                if os.path.exists(potential_path):
-                    icon_path = potential_path
-                    break
-            
-            if icon_path:
-                icon = NSImage.alloc().initWithContentsOfFile_(icon_path)
-                if icon:
-                    alert.setIcon_(icon)
             
             # Add buttons - Cancel first to get focus (won't be highlighted)
             alert.addButtonWithTitle_("Cancel")
@@ -494,6 +505,8 @@ class MacOSGUIManager:
             if remember_checkbox.state() == 1:  # Checkbox is checked
                 # Ask for how long to remember
                 remember_alert = NSAlert.alloc().init()
+                if self._get_app_icon():
+                    remember_alert.setIcon_(self._get_app_icon())
                 remember_alert.setMessageText_("Remember Selection?")
                 remember_alert.setInformativeText_(
                     f"Remember '{selection}' as:"
@@ -556,6 +569,8 @@ class MacOSGUIManager:
             pass
         
         alert = NSAlert.alloc().init()
+        if self._get_app_icon():
+            alert.setIcon_(self._get_app_icon())
         alert.setMessageText_("qBittorrent Credentials")
         alert.setInformativeText_("Enter your qBittorrent credentials:")
         alert.setAlertStyle_(NSAlertStyleInformational)
@@ -578,6 +593,8 @@ class MacOSGUIManager:
             
             # Now ask for password
             password_alert = NSAlert.alloc().init()
+            if self._get_app_icon():
+                password_alert.setIcon_(self._get_app_icon())
             password_alert.setMessageText_("qBittorrent Password")
             password_alert.setInformativeText_("Enter your qBittorrent password:")
             password_alert.setAlertStyle_(NSAlertStyleInformational)
@@ -639,6 +656,8 @@ class MacOSGUIManager:
                 
                 # Prompt for content type
                 alert = NSAlert.alloc().init()
+                if self._get_app_icon():
+                    alert.setIcon_(self._get_app_icon())
                 alert.setMessageText_("Content Type")
                 alert.setInformativeText_("Is this torrent for a movie or a series?")
                 alert.setAlertStyle_(NSAlertStyleInformational)
@@ -1483,6 +1502,8 @@ class MacOSGUIManager:
         # Show alert (critical)
         try:
             alert = NSAlert.alloc().init()
+            if self._get_app_icon():
+                alert.setIcon_(self._get_app_icon())
             alert.setMessageText_("Error")
             alert.setInformativeText_(message)
             alert.setAlertStyle_(NSAlertStyleCritical)
@@ -1500,6 +1521,8 @@ class MacOSGUIManager:
         """
         try:
             alert = NSAlert.alloc().init()
+            if self._get_app_icon():
+                alert.setIcon_(self._get_app_icon())
             alert.setMessageText_(title)
             alert.setInformativeText_(message)
             alert.setAlertStyle_(NSAlertStyleInformational)
