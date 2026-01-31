@@ -20,7 +20,7 @@ if [ -f MagnetLinker.spec ]; then
   pyinstaller --noconfirm MagnetLinker.spec
 else
   echo "Spec not found; building from MagnetApp.py..."
-  pyinstaller --noconfirm --windowed --name MagnetLinker MagnetApp.py
+  pyinstaller --noconfirm --windowed --name MagnetLinker --icon=icon.icns --add-data "icon.png:." MagnetApp.py
 fi
 
 echo "Build finished. .app should be in the 'dist' directory."
