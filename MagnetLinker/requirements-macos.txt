@@ -1,5 +1,8 @@
 rumps>=0.3.0
 pyobjc-framework-Cocoa>=9.0
+customtkinter
+pyperclip
+pystray
 cryptography
 requests
 pillow
