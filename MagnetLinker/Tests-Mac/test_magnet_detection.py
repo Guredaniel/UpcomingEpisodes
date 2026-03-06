@@ -3,7 +3,9 @@
 
 import sys
 import time
-sys.path.insert(0, '/Users/guredaniel/Documents/UpcomingEpisodes/MagnetLinker')
+from pathlib import Path
+project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(project_root))
 
 from CacheManager import CacheManager
 from APIClient import APIClient

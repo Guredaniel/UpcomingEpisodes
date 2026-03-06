@@ -5,9 +5,11 @@ import sys
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime, timedelta
+from pathlib import Path
 
-# Add parent directory to path
-sys.path.insert(0, '/Users/guredaniel/Documents/UpcomingEpisodes/MagnetLinker')
+# Ensure project root is on sys.path dynamically
+project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(project_root))
 
 from MacOSGUIManager import MacOSGUIManager
 from CacheManager import CacheManager
@@ -15,7 +17,7 @@ from APIClient import APIClient
 
 
 class TestMagnetLinkProcessing(unittest.TestCase):
-    """Test magnet link detection and processing."""
+    """Test magnet link detection and processing and related helpers."""
     
     def setUp(self):
         """Set up test fixtures."""
@@ -52,6 +54,17 @@ class TestMagnetLinkProcessing(unittest.TestCase):
         self.gui.last_magnet_url = test_magnet
         self.assertTrue(self.gui.last_magnet_url == test_magnet)
         print("✓ Magnet link detection works")
+
+    def test_reset_selection(self):
+        """Ensure reset_selection clears cached values and updates cache manager."""
+        self.gui.cached_selection = ("Movie", None)
+        self.gui.indefinite_selection = True
+        # call method
+        self.gui.reset_selection()
+        self.assertIsNone(self.gui.cached_selection)
+        self.assertFalse(self.gui.indefinite_selection)
+        self.mock_cache.save_setting.assert_called_with("indefinite_selection", False)
+        print("✓ reset_selection works")
     
     def test_clipboard_monitoring_toggle(self):
         """Test clipboard monitoring can be toggled."""
@@ -87,6 +100,27 @@ class TestMagnetLinkProcessing(unittest.TestCase):
         expiration_time = now + timedelta(minutes=30)
         self.assertLess(datetime.now(), expiration_time)
         print("✓ Content type selection expiration works")
+
+    def test_send_magnet_success_and_failure(self):
+        """Verify _send_magnet calls API client and handles errors."""
+        # successful call
+        self.gui._send_magnet("magnet:?xt=urn:btih:abc", False)
+        self.mock_api.open_qbittorrent_with_magnet.assert_called_with("magnet:?xt=urn:btih:abc", False)
+
+        # simulate connection error
+        self.mock_api.open_qbittorrent_with_magnet.side_effect = Exception("No route to host")
+        called = []
+        def fake_handle(msg):
+            called.append(msg)
+        self.gui.handle_error = fake_handle
+        self.gui._send_magnet("magnet:?xt=urn:btih:def", True)
+        self.assertTrue(any("Cannot connect" in m for m in called))
+
+        # simulate generic failure
+        self.mock_api.open_qbittorrent_with_magnet.side_effect = Exception("something went wrong")
+        self.gui._send_magnet("magnet:?xt=urn:btih:ghi", False)
+        self.assertTrue(any("Failed to add magnet" in m for m in called))
+        print("✓ _send_magnet success and error handling works")
 
 
 class TestSettingsValidation(unittest.TestCase):
@@ -214,6 +248,91 @@ class TestSettingsDialog(unittest.TestCase):
         self.assertEqual(self.gui.api_client.series_directory, "/Series")
         self.assertEqual(self.gui.api_client.movies_directory, "/Movies")
         print("✓ qBittorrent settings loading works")
+
+
+class TestDialogs(unittest.TestCase):
+    """Test dialog-based flows such as prompting credentials and opening torrents."""
+    
+    def setUp(self):
+        self.mock_cache = Mock(spec=CacheManager)
+        self.mock_api = Mock(spec=APIClient)
+        self.mock_cache.load_setting.side_effect = lambda key, default: {
+            "monitor_clipboard_enabled": True,
+            "cache_duration_minutes": 30.0,
+            "indefinite_selection": False,
+            "site_rutor_url": "https://rutor.info",
+            "site_yts_url": "https://yts.mx",
+            "site_ext_url": "https://ext.to",
+            "site_nyaa_url": "https://nyaa.si",
+        }.get(key, default)
+        self.mock_cache.credentials_exist.return_value = True
+        self.mock_api.qbittorrent_url = "http://localhost:8080"
+        self.mock_api.series_directory = "/Series"
+        self.mock_api.movies_directory = "/Movies"
+        self.gui = MacOSGUIManager(self.mock_cache, self.mock_api)
+
+    def test_prompt_credentials_success_and_cancel(self):
+        """Simulate user entering credentials or cancelling."""
+        # Prepare fake text fields
+        user_field = Mock()
+        user_field.stringValue.return_value = "user"
+        pass_field = Mock()
+        pass_field.stringValue.return_value = "pass"
+
+        # Patch field constructors
+        with patch("MacOSGUIManager.NSTextField") as mock_text_cls, \
+             patch("MacOSGUIManager.NSSecureTextField") as mock_secure_cls, \
+             patch("MacOSGUIManager.NSAlert") as mock_alert_cls, \
+             patch("MacOSGUIManager.NSApp") as mock_nsapp:
+            mock_text_cls.alloc.return_value.initWithFrame_.return_value = user_field
+            mock_secure_cls.alloc.return_value.initWithFrame_.return_value = pass_field
+
+            # Setup alert behaviour: two sequential dialogs for username/password
+            alert_inst = Mock()
+            alert_inst.runModal.side_effect = [1000, 1000]
+            mock_alert_cls.alloc.return_value.init.return_value = alert_inst
+
+            # ensure cache save and notification stubs
+            self.mock_cache.save_credentials = Mock()
+            self.gui._show_notification = Mock()
+
+            ok = self.gui.prompt_credentials()
+            self.assertTrue(ok)
+            self.mock_cache.save_credentials.assert_called_with("user", "pass")
+
+            # simulate cancel on first dialog
+            alert_inst.runModal.side_effect = [1001]
+            ok2 = self.gui.prompt_credentials()
+            self.assertFalse(ok2)
+
+            print("✓ prompt_credentials dialog flow works (save & cancel)")
+
+    def test_open_torrent_file_movie_and_series(self):
+        """Simulate picking a torrent file and choosing movie/series."""
+        # Prepare open panel
+        panel = Mock()
+        file_url = Mock()
+        file_url.path.return_value = "/tmp/test.torrent"
+        panel.URLs.return_value = [file_url]
+        panel.runModal.return_value = MacOSGUIManager.NSFileHandlingPanelOKButton
+        with patch("MacOSGUIManager.NSOpenPanel") as mock_open, \
+             patch("MacOSGUIManager.NSAlert") as mock_alert_cls, \
+             patch("MacOSGUIManager.NSApp") as mock_nsapp:
+            mock_open.openPanel.return_value = panel
+            # alert for content type
+            alert_inst = Mock()
+            # first test movie then series
+            alert_inst.runModal.side_effect = [1000, 1001]
+            mock_alert_cls.alloc.return_value.init.return_value = alert_inst
+
+            # call and assert for movie
+            self.gui.open_torrent_file()
+            self.mock_api.open_qbittorrent_with_torrent_file.assert_called_with("/tmp/test.torrent", False)
+            # call again (series)
+            self.gui.open_torrent_file()
+            self.mock_api.open_qbittorrent_with_torrent_file.assert_called_with("/tmp/test.torrent", True)
+
+            print("✓ open_torrent_file dialog flow works for movie and series")
 
 
 class TestMenuItems(unittest.TestCase):
@@ -367,6 +486,28 @@ class TestQBittorrentConnection(unittest.TestCase):
         """Test qBittorrent URL is configured."""
         self.assertEqual(self.gui.api_client.qbittorrent_url, "http://localhost:8080")
         print("✓ qBittorrent URL configuration works")
+
+    def test_open_url_and_menu_helpers(self):
+        """Test _open_url and menu callbacks with mocks."""
+        # patch webbrowser
+        with patch("webbrowser.open") as mock_open:
+            self.gui._open_url("https://example.com")
+            mock_open.assert_called_with("https://example.com")
+
+        # force webbrowser raise
+        with patch("webbrowser.open", side_effect=Exception("boom")):
+            called = []
+            self.gui.handle_error = lambda m: called.append(m)
+            self.gui._open_url("https://example.com")
+            self.assertTrue(any("Failed to open URL" in m for m in called))
+
+        # menu open qbittorrent
+        self.mock_api.open_qbittorrent_web.side_effect = Exception("fail")
+        called2 = []
+        self.gui.handle_error = lambda m: called2.append(m)
+        self.gui._menu_open_qbittorrent(None)
+        self.assertTrue(any("Failed to open qBittorrent" in m for m in called2))
+        print("✓ URL and menu helpers work")
     
     def test_connection_test_method_exists(self):
         """Test connection test method exists."""

@@ -3,6 +3,8 @@
 
 import sys
 import subprocess
+import os
+from pathlib import Path
 
 def run_test_suite(test_file, suite_name):
     """Run a test suite and capture results."""
@@ -10,19 +12,31 @@ def run_test_suite(test_file, suite_name):
     print(f"  {suite_name}")
     print(f"{'='*70}\n")
     
-    result = subprocess.run([sys.executable, test_file], cwd="/Users/guredaniel/Documents/UpcomingEpisodes/MagnetLinker")
+    # run tests with cwd set to project root directory dynamically
+    project_root = Path(__file__).resolve().parent.parent
+    env = os.environ.copy()
+    # ensure project modules are importable
+    env_py = env.get("PYTHONPATH", "")
+    if env_py:
+        env["PYTHONPATH"] = str(project_root) + ":" + env_py
+    else:
+        env["PYTHONPATH"] = str(project_root)
+    result = subprocess.run([sys.executable, test_file], cwd=str(project_root), env=env)
     return result.returncode == 0
 
 
 def main():
     """Run all test suites."""
+    # ensure project root is known
+    project_root = Path(__file__).resolve().parent.parent
     print("\n" + "="*70)
     print("  MAGNETLINKER - COMPREHENSIVE TEST SUITE")
     print("="*70)
     
+    # tests are located relative to project root (macOS folder)
     test_suites = [
-        ("Tests/test_comprehensive.py", "1. Core Features Tests (23 tests)"),
-        ("Tests/test_ui_integration.py", "2. UI & Integration Tests (18 tests)"),
+        (str(project_root / "Tests-Mac" / "test_comprehensive.py"), "1. Core Features Tests (23 tests)"),
+        (str(project_root / "Tests-Mac" / "test_ui_integration.py"), "2. UI & Integration Tests (18 tests)"),
     ]
     
     results = {}

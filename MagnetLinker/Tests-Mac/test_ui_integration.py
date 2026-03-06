@@ -6,7 +6,9 @@ import unittest
 from unittest.mock import Mock, patch, MagicMock
 
 # Add parent directory to path
-sys.path.insert(0, '/Users/guredaniel/Documents/UpcomingEpisodes/MagnetLinker')
+from pathlib import Path
+project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(project_root))
 
 from MacOSGUIManager import MacOSGUIManager
 from CacheManager import CacheManager

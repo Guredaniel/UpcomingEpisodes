@@ -6,7 +6,9 @@ import time
 import threading
 from AppKit import NSPasteboard, NSPasteboardTypeString, NSString
 
-sys.path.insert(0, '/Users/guredaniel/Documents/UpcomingEpisodes/MagnetLinker')
+from pathlib import Path
+project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(project_root))
 
 def simulate_app_flow():
     """Simulate the app initialization and magnet detection."""
