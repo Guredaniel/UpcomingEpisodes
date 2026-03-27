@@ -116,3 +116,17 @@ class CacheManager:
         with open(settings_path, "r") as f:
             settings = json.load(f)
         return settings.get(key, default)
+    
+    def get_saved_sites(self):
+        """Get the list of saved torrent sites."""
+        default_sites = [
+            {"name": "🎌 nyaa.si", "url": "https://nyaa.si"},
+            {"name": "⚡ ext.to", "url": "https://ext.to"},
+            {"name": "🎬 yts.mx", "url": "https://yts.mx"},
+            {"name": "🇷🇺 rutor.info", "url": "https://rutor.info"}
+        ]
+        return self.load_setting("saved_sites", default_sites)
+
+    def save_sites(self, sites):
+        """Save the list of torrent sites."""
+        self.save_setting("saved_sites", sites)

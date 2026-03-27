@@ -16,7 +16,7 @@ from AppKit import (
     NSSecureTextField, NSTextField, NSButton, NSWindowStyleMaskTitled,
     NSWindowStyleMaskClosable, NSWindowStyleMaskMiniaturizable,
     NSBackingStoreBuffered, NSPasteboard, NSPasteboardTypeString, NSString, NSArray,
-    NSView, NSImage, NSApp, NSColor, NSFont, NSPanel,
+    NSView, NSImage, NSApp, NSColor, NSFont, NSPanel, NSScrollView,
     NSVisualEffectView, NSVisualEffectBlendingModeBehindWindow, NSVisualEffectStateActive
 )
 from Foundation import NSThread, NSOperationQueue, NSBlockOperation, NSObject
@@ -91,6 +91,16 @@ class SettingsActionHandler(NSObject):
         """Handle cancel button click."""
         if hasattr(self.manager, '_close_settings_'):
             self.manager._close_settings_(sender)
+            
+    def addSiteClicked_(self, sender):
+        """Handle add site button click."""
+        if hasattr(self.manager, '_add_site'):
+            self.manager._add_site(sender)
+            
+    def removeSiteClicked_(self, sender):
+        """Handle remove site button click."""
+        if hasattr(self.manager, '_remove_site'):
+            self.manager._remove_site(sender)
     
     def sidebarClicked_(self, sender):
         """Handle sidebar item click."""
@@ -139,19 +149,9 @@ class MacOSGUIManager:
             "clipboard_check_interval", 0.5
         )
         
-        # Site URLs
-        self.site_rutor_url = self.cache_manager.load_setting(
-            "site_rutor_url", "https://rutor.info"
-        )
-        self.site_yts_url = self.cache_manager.load_setting(
-            "site_yts_url", "https://yts.mx"
-        )
-        self.site_ext_url = self.cache_manager.load_setting(
-            "site_ext_url", "https://ext.to"
-        )
-        self.site_nyaa_url = self.cache_manager.load_setting(
-            "site_nyaa_url", "https://nyaa.si"
-        )
+        # Dynamic Sites
+        self.saved_sites = self.cache_manager.get_saved_sites()
+        self._working_sites = list(self.saved_sites)
         
         # Clipboard monitoring
         self.last_magnet_url = ""
@@ -324,33 +324,31 @@ class MacOSGUIManager:
         ]
         
     def _create_sites_submenu(self):
-        """Create the Sites submenu with website shortcuts."""
+        """Create the Sites submenu with dynamic website shortcuts."""
         sites_menu = rumps.MenuItem("Sites")
-        sites_menu.add(
-            rumps.MenuItem(
-                "rutor.info",
-                callback=lambda sender: self._open_url(self.site_rutor_url)
-            )
-        )
-        sites_menu.add(
-            rumps.MenuItem(
-                "yts.mx",
-                callback=lambda sender: self._open_url(self.site_yts_url)
-            )
-        )
-        sites_menu.add(
-            rumps.MenuItem(
-                "ext.to",
-                callback=lambda sender: self._open_url(self.site_ext_url)
-            )
-        )
-        sites_menu.add(
-            rumps.MenuItem(
-                "nyaa.si",
-                callback=lambda sender: self._open_url(self.site_nyaa_url)
-            )
-        )
+        self._populate_sites_menu(sites_menu)
         return sites_menu
+        
+    def _populate_sites_menu(self, menu_item):
+        """Rebuilds the sites items in the menu dynamically."""
+        try:
+            menu_item.clear()
+        except AttributeError:
+            # Rumps lazily loads the NSMenu. If it's a new MenuItem, 
+            # its internal _menu is None, causing clear() to throw an error.
+            # We can safely ignore this because a new menu is already clear.
+            pass
+
+        for site in self.saved_sites:
+            name = site.get("name", "Unnamed Site")
+            url = site.get("url", "")
+            if name and url:
+                menu_item.add(
+                    rumps.MenuItem(
+                        name,
+                        callback=lambda sender, u=url: self._open_url(u)
+                    )
+                )
     
     def _open_url(self, url):
         """Open URL in default browser."""
@@ -907,6 +905,10 @@ class MacOSGUIManager:
     
     def _show_settings_section(self, section_name):
         """Display the specified settings section."""
+        # Save Sites tab state if we are leaving it
+        if getattr(self, '_current_settings_section', None) == "Sites" and section_name != "Sites":
+            self._save_working_sites_state()
+            
         # Clear previous content
         for subview in self._content_view.subviews():
             subview.removeFromSuperview()
@@ -1144,33 +1146,103 @@ class MacOSGUIManager:
         title = self._create_section_title("Sites", (40, 480))
         container.addSubview_(title)
         
-        group = self._create_settings_group(((40, 210), (500, 240)), container)
+        # Scrollable Group
+        group = self._create_settings_group(((40, 70), (500, 390)), container)
         
-        sites = [
-            ("nyaa.si", "site_nyaa", self.site_nyaa_url, "🎌"),
-            ("ext.to", "site_ext", self.site_ext_url, "⚡"),
-            ("yts.mx", "site_yts", self.site_yts_url, "🎬"),
-            ("rutor.info", "site_rutor", self.site_rutor_url, "🇷🇺"),
-        ]
+        # NSScrollView setup for dynamic list
+        self._sites_scroll_view = NSScrollView.alloc().initWithFrame_(((1, 1), (498, 388)))
+        self._sites_scroll_view.setHasVerticalScroller_(True)
+        self._sites_scroll_view.setDrawsBackground_(False)
+        self._sites_scroll_view.setBorderType_(0)
         
-        # Top down: i=0 is top, base=180. i=3 is bottom, base=0.
-        for i, (site_name, field_key, site_url, emoji) in enumerate(sites):
-            y_base = 180 - (i * 60)
+        self.sites_document_view = NSView.alloc().initWithFrame_(((0, 0), (480, 388)))
+        self._sites_scroll_view.setDocumentView_(self.sites_document_view)
+        group.addSubview_(self._sites_scroll_view)
+        
+        # Add Site Button
+        add_btn = NSButton.alloc().initWithFrame_(((40, 20), (120, 28)))
+        add_btn.setTitle_("Add Site")
+        add_btn.setBezelStyle_(2)
+        add_btn.setTarget_(self._action_handler)
+        add_btn.setAction_("addSiteClicked:")
+        container.addSubview_(add_btn)
+        
+        if not self._working_sites:
+            self._working_sites = [{"name": "", "url": ""}]
             
-            label = self._create_modern_label(f"{emoji} {site_name}", (20, y_base + 20))
-            group.addSubview_(label)
-            
-            field = NSTextField.alloc().initWithFrame_(((150, y_base + 18), (330, 24)))
-            field.setStringValue_(site_url)
-            field.setBezelStyle_(1)
-            group.addSubview_(field)
-            self._settings_fields[field_key] = field
-            
-            if i < 3:
-                self._add_divider(group, y_base)
-                
+        self._rebuild_sites_ui()
         self._content_view.addSubview_(container)
-    
+
+    def _rebuild_sites_ui(self):
+        """Rebuild the text fields in the scroll view based on _working_sites."""
+        for v in list(self.sites_document_view.subviews()):
+            v.removeFromSuperview()
+            
+        row_height = 40
+        num_sites = len(self._working_sites)
+        total_height = max(388, num_sites * row_height + 20)
+        
+        self.sites_document_view.setFrameSize_((480, total_height))
+        self._site_rows = []
+        
+        for i, site in enumerate(self._working_sites):
+            y = total_height - (i + 1) * row_height - 10
+            
+            # Site Name Field
+            name_field = NSTextField.alloc().initWithFrame_(((20, y), (140, 24)))
+            name_field.setStringValue_(site.get("name", ""))
+            name_field.setPlaceholderString_("Site Name")
+            name_field.setBezelStyle_(1)
+            self.sites_document_view.addSubview_(name_field)
+            
+            # Site URL Field
+            url_field = NSTextField.alloc().initWithFrame_(((170, y), (250, 24)))
+            url_field.setStringValue_(site.get("url", ""))
+            url_field.setPlaceholderString_("https://...")
+            url_field.setBezelStyle_(1)
+            self.sites_document_view.addSubview_(url_field)
+            
+            # Remove Button
+            rm_btn = NSButton.alloc().initWithFrame_(((430, y), (40, 24)))
+            rm_btn.setTitle_("-")
+            rm_btn.setBezelStyle_(2)
+            rm_btn.setTarget_(self._action_handler)
+            rm_btn.setAction_("removeSiteClicked:")
+            rm_btn.setTag_(i)
+            self.sites_document_view.addSubview_(rm_btn)
+            
+            self._site_rows.append({
+                "name_field": name_field,
+                "url_field": url_field
+            })
+            
+        self.sites_document_view.scrollPoint_((0, total_height))
+
+    def _add_site(self, sender):
+        """Action to add a blank site row."""
+        self._save_working_sites_state()
+        self._working_sites.append({"name": "", "url": ""})
+        self._rebuild_sites_ui()
+        
+    def _remove_site(self, sender):
+        """Action to remove a specific site row."""
+        self._save_working_sites_state()
+        idx = sender.tag()
+        if 0 <= idx < len(self._working_sites):
+            self._working_sites.pop(idx)
+            self._rebuild_sites_ui()
+            
+    def _save_working_sites_state(self):
+        """Save text field values back into the memory list before destroying them."""
+        if hasattr(self, '_site_rows'):
+            new_working = []
+            for row in self._site_rows:
+                new_working.append({
+                    "name": row['name_field'].stringValue(),
+                    "url": row['url_field'].stringValue()
+                })
+            self._working_sites = new_working
+
     def _close_settings_(self, sender):
         """Close the settings window."""
         if hasattr(self, '_settings_window'):
@@ -1249,30 +1321,25 @@ class MacOSGUIManager:
                 self.cache_manager.save_setting("movies_directory", new_movies)
                 self.api_client.movies_directory = new_movies
             
-            # Save site URLs with validation
-            if 'site_rutor' in self._settings_fields:
-                new_url = self._settings_fields['site_rutor'].stringValue()
-                if new_url and (new_url.startswith("http://") or new_url.startswith("https://")):
-                    self.cache_manager.save_setting("site_rutor_url", new_url)
-                    self.site_rutor_url = new_url
+            # Save Dynamic Sites
+            if self._current_settings_section == "Sites":
+                self._save_working_sites_state()
+                
+            valid_sites = []
+            for s in self._working_sites:
+                name = s.get("name", "").strip()
+                url = s.get("url", "").strip()
+                if name and url:
+                    if not (url.startswith("http://") or url.startswith("https://")):
+                        url = "https://" + url
+                    valid_sites.append({"name": name, "url": url})
             
-            if 'site_yts' in self._settings_fields:
-                new_url = self._settings_fields['site_yts'].stringValue()
-                if new_url and (new_url.startswith("http://") or new_url.startswith("https://")):
-                    self.cache_manager.save_setting("site_yts_url", new_url)
-                    self.site_yts_url = new_url
+            self.saved_sites = valid_sites
+            self.cache_manager.save_sites(valid_sites)
             
-            if 'site_ext' in self._settings_fields:
-                new_url = self._settings_fields['site_ext'].stringValue()
-                if new_url and (new_url.startswith("http://") or new_url.startswith("https://")):
-                    self.cache_manager.save_setting("site_ext_url", new_url)
-                    self.site_ext_url = new_url
-            
-            if 'site_nyaa' in self._settings_fields:
-                new_url = self._settings_fields['site_nyaa'].stringValue()
-                if new_url and (new_url.startswith("http://") or new_url.startswith("https://")):
-                    self.cache_manager.save_setting("site_nyaa_url", new_url)
-                    self.site_nyaa_url = new_url
+            # Dynamically update the sites menu items 
+            if "Sites" in self.app.menu:
+                self._populate_sites_menu(self.app.menu["Sites"])
             
             # Save cache duration
             if 'cache_duration' in self._settings_fields:
