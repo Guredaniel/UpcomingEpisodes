@@ -4,7 +4,6 @@ import threading
 import webbrowser
 import sys
 from datetime import datetime, timedelta
-from pathlib import Path
 import os
 import time
 import objc
@@ -14,13 +13,43 @@ import queue
 from AppKit import (
     NSApplication, NSAlert, NSAlertStyleInformational, NSAlertStyleWarning,
     NSAlertStyleCritical, NSOpenPanel, NSFileHandlingPanelOKButton,
-    NSSecureTextField, NSTextField, NSButton, NSWindow, NSWindowStyleMaskTitled,
-    NSWindowStyleMaskClosable, NSWindowStyleMaskMiniaturizable, NSWindowStyleMaskResizable,
+    NSSecureTextField, NSTextField, NSButton, NSWindowStyleMaskTitled,
+    NSWindowStyleMaskClosable, NSWindowStyleMaskMiniaturizable,
     NSBackingStoreBuffered, NSPasteboard, NSPasteboardTypeString, NSString, NSArray,
-    NSTabView, NSTabViewItem, NSView, NSImage, NSApp, NSColor, NSFont, NSPanel, NSBezierPath,
-    NSVisualEffectView, NSVisualEffectMaterialHUDWindow, NSVisualEffectBlendingModeBehindWindow, NSVisualEffectStateActive
+    NSView, NSImage, NSApp, NSColor, NSFont, NSPanel,
+    NSVisualEffectView, NSVisualEffectBlendingModeBehindWindow, NSVisualEffectStateActive
 )
 from Foundation import NSThread, NSOperationQueue, NSBlockOperation, NSObject
+
+# Constants for modern macOS window styling
+try:
+    from AppKit import NSWindowStyleMaskFullSizeContentView, NSWindowTitleHidden
+except ImportError:
+    NSWindowStyleMaskFullSizeContentView = 1 << 15
+    NSWindowTitleHidden = 1
+
+try:
+    from AppKit import NSSwitch
+    HAS_NSSWITCH = True
+except ImportError:
+    HAS_NSSWITCH = False
+
+try:
+    from AppKit import NSVisualEffectMaterialSidebar
+except ImportError:
+    NSVisualEffectMaterialSidebar = 11
+
+try:
+    from UserNotifications import (
+        UNUserNotificationCenter,
+        UNMutableNotificationContent,
+        UNNotificationRequest,
+        UNAuthorizationOptionAlert,
+        UNAuthorizationOptionSound,
+    )
+    HAS_USER_NOTIFICATIONS = True
+except ImportError:
+    HAS_USER_NOTIFICATIONS = False
 
 # Suppress PyObjC pointer warnings that occur when passing CGColorRefs
 try:
@@ -66,7 +95,7 @@ class SettingsActionHandler(NSObject):
     def sidebarClicked_(self, sender):
         """Handle sidebar item click."""
         if hasattr(self.manager, '_show_settings_section'):
-            section_name = sender.title()
+            section_name = sender.title().strip()
             self.manager._show_settings_section(section_name)
     
     def testConnectionClicked_(self, sender):
@@ -144,6 +173,26 @@ class MacOSGUIManager:
         
         # Setup auto-launch on initialization
         self._setup_auto_launch()
+        
+        # Request notification permissions
+        self._setup_notifications()
+
+    def _setup_notifications(self):
+        """Request permission to show macOS banner notifications."""
+        if HAS_USER_NOTIFICATIONS:
+            try:
+                center = UNUserNotificationCenter.currentNotificationCenter()
+                options = UNAuthorizationOptionAlert | UNAuthorizationOptionSound
+                
+                def auth_completion(granted, error):
+                    if not granted:
+                        print("[DEBUG] Notification permission denied.")
+                    if error:
+                        print(f"[DEBUG] Notification error: {error}")
+                        
+                center.requestAuthorizationWithOptions_completionHandler_(options, auth_completion)
+            except Exception as e:
+                print(f"[DEBUG] Error setting up notifications: {e}")
 
     def _get_app_icon(self):
         """Get the application icon as NSImage."""
@@ -268,7 +317,7 @@ class MacOSGUIManager:
             None,  # Separator
             rumps.MenuItem("Clear Credentials", callback=self._menu_clear_credentials),
             rumps.MenuItem("Reset Selection", callback=self._menu_reset_selection),
-            rumps.MenuItem("Preferences", callback=self._menu_settings),
+            rumps.MenuItem("Preferences...", callback=self._menu_settings),
             None,  # Separator
             rumps.MenuItem("Toggle Clipboard Monitoring", callback=self._menu_toggle_clipboard),
             None,  # Separator
@@ -346,23 +395,6 @@ class MacOSGUIManager:
         status = "enabled" if self.monitor_clipboard_enabled else "disabled"
         self._show_notification("Clipboard Monitoring", f"Clipboard monitoring is now {status}.")
     
-    def _menu_test_connection(self, sender):
-        """Menu callback: Test qBittorrent connection."""
-        try:
-            result = self.api_client.test_connection(self.api_client.qbittorrent_url)
-            if result:
-                self._show_notification("Connection Successful", f"Successfully connected to qBittorrent at {self.api_client.qbittorrent_url}")
-            else:
-                self.handle_error("Failed to connect to qBittorrent.")
-        except Exception as e:
-            error_msg = str(e)
-            if "401" in error_msg or "credentials" in error_msg.lower():
-                self.handle_error("Authentication failed.\n\nCheck your username and password in Preferences.")
-            elif "connection" in error_msg.lower():
-                self.handle_error("Cannot reach qBittorrent.\n\nCheck the URL and network connection in Preferences.")
-            else:
-                self.handle_error(f"Connection test failed:\n\n{error_msg}")
-    
     def _menu_clear_credentials(self, sender):
         """Menu callback: Clear saved credentials."""
         alert = NSAlert.alloc().init()
@@ -379,12 +411,6 @@ class MacOSGUIManager:
         if response == 1000:  # Clear
             self.cache_manager.clear_credentials()
             self._show_notification("Credentials Cleared", "Saved qBittorrent credentials have been removed.")
-    
-    def _menu_exit(self, sender):
-        """Menu callback: Exit application."""
-        self.clipboard_monitor_running = False
-        import sys
-        sys.exit(0)
     
     def open_magnet_input_dialog(self):
         """Prompt user for magnet link input using native dialog.
@@ -693,56 +719,52 @@ class MacOSGUIManager:
         self.cache_manager.save_setting("indefinite_selection", False)
     
     def show_settings_dialog(self):
-        """Show settings dialog with sidebar navigation like macOS System Settings."""
-        # Store references to all input fields for later access
+        """Show settings dialog with modern macOS System Settings design language."""
         self._settings_fields = {}
         self._current_settings_section = "General"
         
-        # Create action handler for Cocoa target/action pattern
         self._action_handler = SettingsActionHandler.alloc().initWithManager_(self)
         
-        # Create a window
+        # Create a thoroughly modern window (transparent titlebar merging with content)
         window = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
-            ((100, 100), (800, 600)),  # Compact window size
-            NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable,
+            ((100, 100), (800, 600)),
+            NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskFullSizeContentView,
             NSBackingStoreBuffered,
             False
         )
+        window.setTitlebarAppearsTransparent_(True)
+        window.setTitleVisibility_(NSWindowTitleHidden)
         window.setTitle_("Settings")
         window.center()
         
-        # Set window to floating level so it appears above other windows
         from AppKit import NSFloatingWindowLevel
         window.setLevel_(NSFloatingWindowLevel)
         
-        # Activate app to bring window to front
         try:
             NSApp().activateIgnoringOtherApps_(True)
         except Exception:
             pass
         
-        # Create main container
         main_container = NSView.alloc().initWithFrame_(((0, 0), (800, 600)))
         main_container.setWantsLayer_(True)
         main_layer = main_container.layer()
-        main_layer.setBackgroundColor_(NSColor.controlBackgroundColor().CGColor())
+        main_layer.setBackgroundColor_(NSColor.windowBackgroundColor().CGColor())
         
-        # Create sidebar (left panel) with glassmorphism
-        sidebar = NSVisualEffectView.alloc().initWithFrame_(((0, 0), (200, 550)))
-        sidebar.setMaterial_(NSVisualEffectMaterialHUDWindow)  # Glassmorphism
+        # Create modern sidebar reaching the top
+        sidebar = NSVisualEffectView.alloc().initWithFrame_(((0, 0), (220, 600)))
+        sidebar.setMaterial_(NSVisualEffectMaterialSidebar)
         sidebar.setBlendingMode_(NSVisualEffectBlendingModeBehindWindow)
-        sidebar.setState_(NSVisualEffectStateActive)  # Vibrant tint
+        sidebar.setState_(NSVisualEffectStateActive)
         sidebar.setWantsLayer_(True)
-        sidebar.layer().setCornerRadius_(16)  # Tahoe rounds
         
         main_container.addSubview_(sidebar)
         
-        # Add sidebar items with macOS-style spacing
+        # Offset sidebar items downwards to avoid window traffic lights
         sidebar_items = [
-            ("General", "gear", 480),
-            ("Directories", "folder", 437),
-            ("qBittorrent", "download", 394),
-            ("Sites", "link", 351),
+            ("General", "gear", 520),
+            ("Directories", "folder", 480),
+            ("qBittorrent", "download", 440),
+            ("Sites", "link", 400),
         ]
         
         self._sidebar_buttons = {}
@@ -753,28 +775,26 @@ class MacOSGUIManager:
             button.setTarget_(self._action_handler)
             button.setAction_("sidebarClicked:")
         
-        # Create content area (right panel) with padding - match macOS style
-        self._content_view = NSView.alloc().initWithFrame_(((220, 50), (560, 460)))
+        # Create content area container (right side panel)
+        self._content_view = NSView.alloc().initWithFrame_(((220, 50), (580, 550)))
         self._content_view.setWantsLayer_(True)
         content_layer = self._content_view.layer()
-        content_layer.setBackgroundColor_(NSColor.controlBackgroundColor().CGColor())
+        content_layer.setBackgroundColor_(NSColor.windowBackgroundColor().CGColor())
         main_container.addSubview_(self._content_view)
         
-        # Create separator line between content and buttons
-        separator = NSView.alloc().initWithFrame_(((220, 45), (560, 0.5)))
+        # Create subtle separator line between content and buttons
+        separator = NSView.alloc().initWithFrame_(((220, 50), (580, 1)))
         separator.setWantsLayer_(True)
-        sep_layer = separator.layer()
-        sep_layer.setBackgroundColor_(NSColor.separatorColor().CGColor())
+        separator.layer().setBackgroundColor_(NSColor.separatorColor().CGColor())
         main_container.addSubview_(separator)
         
-        # Create button area at bottom - match macOS style
-        button_area = NSView.alloc().initWithFrame_(((200, 0), (600, 45)))
+        # Bottom area (Modern macOS usually skips this, but preserving to retain exact flow)
+        button_area = NSView.alloc().initWithFrame_(((220, 0), (580, 50)))
         button_area.setWantsLayer_(True)
         btn_layer = button_area.layer()
-        btn_layer.setBackgroundColor_(NSColor.controlBackgroundColor().CGColor())
+        btn_layer.setBackgroundColor_(NSColor.windowBackgroundColor().CGColor())
         
-        # Cancel button - left side
-        cancel_button = NSButton.alloc().initWithFrame_(((20, 8), (80, 32)))
+        cancel_button = NSButton.alloc().initWithFrame_(((400, 10), (80, 32)))
         cancel_button.setTitle_("Cancel")
         cancel_button.setBezelStyle_(1)  # Rounded rect button
         cancel_button.setFont_(NSFont.systemFontOfSize_weight_(13, 0.23))
@@ -782,14 +802,12 @@ class MacOSGUIManager:
         cancel_button.setAction_("closeSettingsClicked:")
         button_area.addSubview_(cancel_button)
         
-        # Save button - right side, blue accent
-        save_button = NSButton.alloc().initWithFrame_(((500, 8), (80, 32)))
+        save_button = NSButton.alloc().initWithFrame_(((490, 10), (80, 32)))
         save_button.setTitle_("Save")
         save_button.setBezelStyle_(1)  # Rounded rect button
         save_button.setFont_(NSFont.systemFontOfSize_weight_(13, 0.23))
         save_button.setTarget_(self._action_handler)
         save_button.setAction_("saveSettingsClicked:")
-        # Make save button more prominent
         try:
             save_button.setKeyEquivalent_("\r")  # Return key
         except:
@@ -798,54 +816,93 @@ class MacOSGUIManager:
         
         main_container.addSubview_(button_area)
         
-        # Set window content
         window.setContentView_(main_container)
         
-        # Store references
         self._settings_window = window
         self._sidebar_items = ["General", "Directories", "qBittorrent", "Sites"]
         
-        # Show initial section
         self._show_settings_section("General")
         
-        # Ensure modal stops if the user closes the window via the titlebar
         delegate = SettingsWindowDelegate.alloc().init()
         window.setDelegate_(delegate)
-        # Keep a reference to the delegate so it isn't garbage collected
         self._settings_window_delegate = delegate
 
-        # Make window modal
         NSApp().runModalForWindow_(window)
     
-    def _create_sidebar_button(self, title, position):
-        """Create a sidebar navigation button."""
-        button = NSButton.alloc().initWithFrame_((position, (160, 34)))
-        button.setTitle_(title)
-        button.setBezelStyle_(0)
-        button.setButtonType_(7)  # Toggle button
-        button.setAlignment_(0)  # Left-aligned
-        font = NSFont.systemFontOfSize_(13)
-        button.setFont_(font)
-        return button
-    
     def _create_enhanced_sidebar_button(self, title, icon_name, position):
-        """Create an enhanced sidebar button with better styling matching macOS System Settings."""
-        button = NSButton.alloc().initWithFrame_((position, (176, 26)))
-        button.setTitle_(title)
+        """Create an enhanced sidebar button matching the macOS System Settings style."""
+        button = NSButton.alloc().initWithFrame_((position, (190, 32)))
+        button.setTitle_(f"  {title}")
         button.setBezelStyle_(3)  # Rounded bezel for proper highlighting
         button.setButtonType_(7)  # Toggle button
         button.setAlignment_(0)  # Left-aligned
-        button.setImagePosition_(0)  # Left image position
         
-        # Font styling - match macOS system settings
-        font = NSFont.systemFontOfSize_weight_(13, 0.23)  # Medium weight
+        font = NSFont.systemFontOfSize_weight_(14, 0.0)
         button.setFont_(font)
         
         return button
+
+    def _create_settings_group(self, frame_rect, container):
+        """Create a rounded rect container for grouping settings (card UI)."""
+        group_view = NSView.alloc().initWithFrame_(frame_rect)
+        group_view.setWantsLayer_(True)
+        layer = group_view.layer()
+        layer.setCornerRadius_(10)
+        layer.setBorderWidth_(1)
+        layer.setBorderColor_(NSColor.separatorColor().CGColor())
+        layer.setBackgroundColor_(NSColor.controlBackgroundColor().CGColor())
+        container.addSubview_(group_view)
+        return group_view
+
+    def _add_divider(self, container, y_pos, width=500):
+        """Add a subtle horizontal divider line within a settings group."""
+        divider = NSView.alloc().initWithFrame_(((0, y_pos), (width, 1)))
+        divider.setWantsLayer_(True)
+        divider.layer().setBackgroundColor_(NSColor.separatorColor().CGColor())
+        container.addSubview_(divider)
     
+    def _create_section_title(self, title, position):
+        """Create an enhanced section title label."""
+        label = NSTextField.alloc().initWithFrame_((position, (500, 36)))
+        label.setStringValue_(title)
+        label.setBezeled_(False)
+        label.setDrawsBackground_(False)
+        label.setEditable_(False)
+        label.setSelectable_(False)
+        font = NSFont.systemFontOfSize_weight_(28, 0.3)  # Large, prominent weight
+        label.setFont_(font)
+        label.setTextColor_(NSColor.labelColor())
+        return label
+    
+    def _create_modern_label(self, text, position):
+        """Create a standard macOS style text label."""
+        label = NSTextField.alloc().initWithFrame_((position, (460, 20)))
+        label.setStringValue_(text)
+        label.setBezeled_(False)
+        label.setDrawsBackground_(False)
+        label.setEditable_(False)
+        label.setSelectable_(False)
+        font = NSFont.systemFontOfSize_weight_(14, 0.0) 
+        label.setFont_(font)
+        label.setTextColor_(NSColor.labelColor())
+        return label
+    
+    def _create_secondary_label(self, text, position):
+        """Create a secondary text label with smaller font."""
+        label = NSTextField.alloc().initWithFrame_((position, (470, 16)))
+        label.setStringValue_(text)
+        label.setBezeled_(False)
+        label.setDrawsBackground_(False)
+        label.setEditable_(False)
+        label.setSelectable_(False)
+        font = NSFont.systemFontOfSize_(12)
+        label.setFont_(font)
+        label.setTextColor_(NSColor.secondaryLabelColor())
+        return label
+
     def _sidebar_clicked_(self, sender):
         """Handle sidebar item click."""
-        section_name = sender.title()
+        section_name = sender.title().strip()
         self._show_settings_section(section_name)
     
     def _show_settings_section(self, section_name):
@@ -901,237 +958,138 @@ class MacOSGUIManager:
         if response == 1000:  # Clear
             self.cache_manager.clear_credentials()
             self._show_notification("Credentials Cleared", "Saved qBittorrent credentials have been removed.")
-            # Refresh the qBittorrent section to update status
             self._show_settings_section("qBittorrent")
     
     def _create_general_content(self):
-        """Create General settings content with enhanced styling."""
-        container = NSView.alloc().initWithFrame_(((0, 0), (560, 460)))
-        container.setWantsLayer_(True)
-        container.layer().setBackgroundColor_(NSColor.controlBackgroundColor().CGColor())
+        """Create General settings content using modern Card UI."""
+        container = NSView.alloc().initWithFrame_(((0, 0), (580, 550)))
         
-        # Section title
-        title = self._create_section_title("General", (20, 430))
+        title = self._create_section_title("General", (40, 480))
         container.addSubview_(title)
         
-        # Section description
-        desc = self._create_section_description(
-            "Manage app behavior, cache duration, and monitoring",
-            (20, 410)
-        )
-        container.addSubview_(desc)
+        # Group 1: Auto Launch
+        group1 = self._create_settings_group(((40, 400), (500, 60)), container)
         
-        # Add divider line below description
-        divider1 = NSView.alloc().initWithFrame_(((20, 395), (620, 0.5)))
-        divider1.setWantsLayer_(True)
-        divider1.layer().setBackgroundColor_(NSColor.separatorColor().CGColor())
-        container.addSubview_(divider1)
+        autolaunch_label = self._create_modern_label("Auto-Launch on Login", (20, 20))
+        group1.addSubview_(autolaunch_label)
         
-        y_pos = 365
+        if HAS_NSSWITCH:
+            autolaunch_switch = NSSwitch.alloc().initWithFrame_(((430, 18), (50, 24)))
+            autolaunch_switch.setState_(1 if self.auto_launch_enabled else 0)
+        else:
+            autolaunch_switch = NSButton.alloc().initWithFrame_(((430, 18), (50, 24)))
+            autolaunch_switch.setButtonType_(3)
+            autolaunch_switch.setTitle_("")
+            autolaunch_switch.setState_(1 if self.auto_launch_enabled else 0)
+        group1.addSubview_(autolaunch_switch)
+        self._settings_fields['auto_launch'] = autolaunch_switch
         
-        # Auto-launch section
-        autolaunch_label = self._create_modern_label("Auto-Launch on Login", (20, y_pos))
-        container.addSubview_(autolaunch_label)
+        # Group 2: Cache & Monitoring (3 rows, 70px each, Total Height 210)
+        group2 = self._create_settings_group(((40, 160), (500, 210)), container)
         
-        y_pos -= 30
-        autolaunch_checkbox = NSButton.alloc().initWithFrame_(((20, y_pos), (300, 18)))
-        autolaunch_checkbox.setButtonType_(3)  # NSSwitchButton
-        autolaunch_checkbox.setTitle_("Launch MagnetLinker automatically")
-        autolaunch_checkbox.setState_(1 if self.auto_launch_enabled else 0)
-        container.addSubview_(autolaunch_checkbox)
-        self._settings_fields['auto_launch'] = autolaunch_checkbox
+        # Row 1: Cache duration (Base: 140)
+        cache_label = self._create_modern_label("Cache Duration (minutes)", (20, 140 + 38))
+        group2.addSubview_(cache_label)
+        cache_help = self._create_secondary_label("0 = always ask, 30 = remember for 30 mins", (20, 140 + 16))
+        group2.addSubview_(cache_help)
         
-        y_pos -= 35
-        
-        # Add divider before cache duration
-        divider2 = NSView.alloc().initWithFrame_(((20, y_pos - 5), (470, 0.5)))
-        divider2.setWantsLayer_(True)
-        divider2.layer().setBackgroundColor_(NSColor.separatorColor().CGColor())
-        container.addSubview_(divider2)
-        
-        # Cache duration section with better spacing
-        cache_label = self._create_modern_label("Cache Duration (minutes)", (20, y_pos))
-        container.addSubview_(cache_label)
-        
-        y_pos -= 30
-        cache_field = NSTextField.alloc().initWithFrame_(((20, y_pos), (250, 24)))
+        cache_field = NSTextField.alloc().initWithFrame_(((400, 140 + 24), (80, 24)))
         cache_field.setStringValue_(str(self.cache_duration_minutes))
-        cache_field.setPlaceholderString_("e.g. 30")
-        cache_field.setBezelStyle_(1)  # Sunken bezeled
-        container.addSubview_(cache_field)
+        cache_field.setBezelStyle_(1)
+        group2.addSubview_(cache_field)
         self._settings_fields['cache_duration'] = cache_field
         
-        # Help text
-        cache_help = self._create_secondary_label(
-            "0 = always ask, 30 = remember for 30 minutes",
-            (20, y_pos - 20)
-        )
-        container.addSubview_(cache_help)
+        self._add_divider(group2, 140)
         
-        y_pos -= 70
+        # Row 2: Clipboard monitoring (Base: 70)
+        monitor_label = self._create_modern_label("Clipboard Monitoring", (20, 70 + 38))
+        group2.addSubview_(monitor_label)
+        monitor_help = self._create_secondary_label("Toggle monitoring from the menu bar", (20, 70 + 16))
+        group2.addSubview_(monitor_help)
         
-        # Add divider before clipboard section
-        divider2 = NSView.alloc().initWithFrame_(((20, y_pos - 5), (470, 0.5)))
-        divider2.setWantsLayer_(True)
-        divider2.layer().setBackgroundColor_(NSColor.separatorColor().CGColor())
-        container.addSubview_(divider2)
-        
-        # Clipboard monitoring section
-        monitor_label = self._create_modern_label("Clipboard Monitoring", (20, y_pos))
-        container.addSubview_(monitor_label)
-        
-        y_pos -= 30
         monitor_status = self._create_secondary_label(
-            "Status: " + ("🟢 Enabled" if self.monitor_clipboard_enabled else "🔴 Disabled"),
-            (20, y_pos)
+            "🟢 Enabled" if self.monitor_clipboard_enabled else "🔴 Disabled",
+            (400, 70 + 26)
         )
-        container.addSubview_(monitor_status)
+        group2.addSubview_(monitor_status)
         
-        y_pos -= 30
+        self._add_divider(group2, 70)
         
-        # Help text
-        monitor_help = self._create_secondary_label(
-            "Toggle monitoring from the menu bar",
-            (20, y_pos)
-        )
-        container.addSubview_(monitor_help)
+        # Row 3: Clipboard Interval (Base: 0)
+        interval_label = self._create_modern_label("Clipboard Check Interval (sec)", (20, 0 + 38))
+        group2.addSubview_(interval_label)
+        interval_help = self._create_secondary_label("Lower values = faster detection", (20, 0 + 16))
+        group2.addSubview_(interval_help)
         
-        y_pos -= 60
-        
-        # Add divider before clipboard interval
-        divider3 = NSView.alloc().initWithFrame_(((20, y_pos - 5), (470, 0.5)))
-        divider3.setWantsLayer_(True)
-        divider3.layer().setBackgroundColor_(NSColor.separatorColor().CGColor())
-        container.addSubview_(divider3)
-        
-        # Clipboard check interval section
-        interval_label = self._create_modern_label("Clipboard Check Interval (seconds)", (20, y_pos))
-        container.addSubview_(interval_label)
-        
-        y_pos -= 30
-        interval_field = NSTextField.alloc().initWithFrame_(((20, y_pos), (250, 24)))
+        interval_field = NSTextField.alloc().initWithFrame_(((400, 0 + 24), (80, 24)))
         interval_field.setStringValue_(str(self.clipboard_check_interval))
-        interval_field.setPlaceholderString_("e.g. 0.5")
-        interval_field.setBezelStyle_(1)  # Sunken bezeled
-        container.addSubview_(interval_field)
+        interval_field.setBezelStyle_(1)
+        group2.addSubview_(interval_field)
         self._settings_fields['clipboard_interval'] = interval_field
-        
-        # Help text
-        interval_help = self._create_secondary_label(
-            "Lower values = faster detection, higher CPU usage (0.1 - 2.0 recommended)",
-            (20, y_pos - 20)
-        )
-        container.addSubview_(interval_help)
         
         self._content_view.addSubview_(container)
     
     def _create_directories_content(self):
-        """Create Directories settings content with enhanced styling."""
-        container = NSView.alloc().initWithFrame_(((0, 0), (560, 460)))
-        container.setWantsLayer_(True)
-        container.layer().setBackgroundColor_(NSColor.controlBackgroundColor().CGColor())
+        """Create Directories settings content using modern Card UI."""
+        container = NSView.alloc().initWithFrame_(((0, 0), (580, 550)))
         
-        # Section title
-        title = self._create_section_title("Directories", (20, 430))
+        title = self._create_section_title("Directories", (40, 480))
         container.addSubview_(title)
         
-        # Section description
-        desc = self._create_section_description(
-            "Configure download directories for series and movies",
-            (20, 410)
-        )
-        container.addSubview_(desc)
+        # Directories Group (2 rows, Total Height 120)
+        group = self._create_settings_group(((40, 340), (500, 120)), container)
         
-        # Add divider line
-        divider = NSView.alloc().initWithFrame_(((20, 395), (620, 0.5)))
-        divider.setWantsLayer_(True)
-        divider.layer().setBackgroundColor_(NSColor.separatorColor().CGColor())
-        container.addSubview_(divider)
+        # Series Directory (Base: 60)
+        series_label = self._create_modern_label("Series Directory", (20, 60 + 20))
+        group.addSubview_(series_label)
         
-        y_pos = 365
-        
-        # Series directory section
-        series_label = self._create_modern_label("Series Directory", (20, y_pos))
-        container.addSubview_(series_label)
-        
-        y_pos -= 30
-        series_field = NSTextField.alloc().initWithFrame_(((20, y_pos), (620, 24)))
+        series_field = NSTextField.alloc().initWithFrame_(((180, 60 + 18), (300, 24)))
         series_field.setStringValue_(self.api_client.series_directory)
-        series_field.setBezelStyle_(1)  # Sunken bezeled
-        container.addSubview_(series_field)
+        series_field.setBezelStyle_(1)
+        group.addSubview_(series_field)
         self._settings_fields['series_dir'] = series_field
         
-        y_pos -= 60
+        self._add_divider(group, 60)
         
-        # Add divider
-        divider2 = NSView.alloc().initWithFrame_(((20, y_pos + 5), (620, 0.5)))
-        divider2.setWantsLayer_(True)
-        divider2.layer().setBackgroundColor_(NSColor.separatorColor().CGColor())
-        container.addSubview_(divider2)
+        # Movies Directory (Base: 0)
+        movies_label = self._create_modern_label("Movies Directory", (20, 0 + 20))
+        group.addSubview_(movies_label)
         
-        # Movies directory section
-        movies_label = self._create_modern_label("Movies Directory", (20, y_pos))
-        container.addSubview_(movies_label)
-        
-        y_pos -= 30
-        movies_field = NSTextField.alloc().initWithFrame_(((20, y_pos), (620, 24)))
+        movies_field = NSTextField.alloc().initWithFrame_(((180, 0 + 18), (300, 24)))
         movies_field.setStringValue_(self.api_client.movies_directory)
-        movies_field.setBezelStyle_(1)  # Sunken bezeled
-        container.addSubview_(movies_field)
+        movies_field.setBezelStyle_(1)
+        group.addSubview_(movies_field)
         self._settings_fields['movies_dir'] = movies_field
         
         self._content_view.addSubview_(container)
     
     def _create_qbittorrent_content(self):
-        """Create qBittorrent settings content with enhanced styling."""
-        container = NSView.alloc().initWithFrame_(((0, 0), (560, 460)))
-        container.setWantsLayer_(True)
-        container.layer().setBackgroundColor_(NSColor.controlBackgroundColor().CGColor())
+        """Create qBittorrent settings content using modern Card UI."""
+        container = NSView.alloc().initWithFrame_(((0, 0), (580, 550)))
         
-        # Section title
-        title = self._create_section_title("qBittorrent", (20, 430))
+        title = self._create_section_title("qBittorrent", (40, 480))
         container.addSubview_(title)
         
-        # Section description
-        desc = self._create_section_description(
-            "Configure connection settings for qBittorrent",
-            (20, 410)
-        )
-        container.addSubview_(desc)
+        # Server Group
+        group1 = self._create_settings_group(((40, 390), (500, 60)), container)
         
-        # Add divider line
-        divider = NSView.alloc().initWithFrame_(((20, 395), (620, 0.5)))
-        divider.setWantsLayer_(True)
-        divider.layer().setBackgroundColor_(NSColor.separatorColor().CGColor())
-        container.addSubview_(divider)
+        url_label = self._create_modern_label("Server URL", (20, 20))
+        group1.addSubview_(url_label)
         
-        y_pos = 365
+        url_field = NSTextField.alloc().initWithFrame_(((150, 18), (330, 24)))
+        url_field.setStringValue_(self.api_client.qbittorrent_url)
+        url_field.setBezelStyle_(1)
+        group1.addSubview_(url_field)
+        self._settings_fields['qb_url'] = url_field
         
-        # URL section
-        url_label = self._create_modern_label("URL", (20, y_pos))
-        container.addSubview_(url_label)
+        # Auth Group (3 rows, Height 180)
+        group2 = self._create_settings_group(((40, 180), (500, 180)), container)
         
-        y_pos -= 25
-        qb_url_field = NSTextField.alloc().initWithFrame_(((20, y_pos), (620, 22)))
-        qb_url_field.setStringValue_(self.api_client.qbittorrent_url)
-        qb_url_field.setBezelStyle_(1)
-        container.addSubview_(qb_url_field)
-        self._settings_fields['qb_url'] = qb_url_field
+        # Username (Base: 120)
+        user_label = self._create_modern_label("Username", (20, 120 + 20))
+        group2.addSubview_(user_label)
         
-        y_pos -= 40
-        
-        # Divider
-        divider2 = NSView.alloc().initWithFrame_(((20, y_pos + 5), (620, 0.5)))
-        divider2.setWantsLayer_(True)
-        divider2.layer().setBackgroundColor_(NSColor.separatorColor().CGColor())
-        container.addSubview_(divider2)
-        
-        # Username section
-        user_label = self._create_modern_label("Username", (20, y_pos))
-        container.addSubview_(user_label)
-        
-        y_pos -= 25
-        user_field = NSTextField.alloc().initWithFrame_(((20, y_pos), (620, 22)))
+        user_field = NSTextField.alloc().initWithFrame_(((150, 120 + 18), (330, 24)))
         user_field.setPlaceholderString_("Optional")
         user_field.setBezelStyle_(1)
         try:
@@ -1141,182 +1099,83 @@ class MacOSGUIManager:
                     user_field.setStringValue_(creds[0])
         except:
             pass
-        container.addSubview_(user_field)
+        group2.addSubview_(user_field)
         self._settings_fields['qb_user'] = user_field
         
-        y_pos -= 40
+        self._add_divider(group2, 120)
         
-        # Divider
-        divider3 = NSView.alloc().initWithFrame_(((20, y_pos + 5), (620, 0.5)))
-        divider3.setWantsLayer_(True)
-        divider3.layer().setBackgroundColor_(NSColor.separatorColor().CGColor())
-        container.addSubview_(divider3)
+        # Password (Base: 60)
+        pass_label = self._create_modern_label("Password", (20, 60 + 20))
+        group2.addSubview_(pass_label)
         
-        # Password section
-        pass_label = self._create_modern_label("Password", (20, y_pos))
-        container.addSubview_(pass_label)
-        
-        y_pos -= 25
-        pass_field = NSSecureTextField.alloc().initWithFrame_(((20, y_pos), (620, 22)))
+        pass_field = NSSecureTextField.alloc().initWithFrame_(((150, 60 + 18), (330, 24)))
         pass_field.setPlaceholderString_("Optional")
         pass_field.setBezelStyle_(1)
-        container.addSubview_(pass_field)
+        group2.addSubview_(pass_field)
         self._settings_fields['qb_pass'] = pass_field
         
-        y_pos -= 40
+        self._add_divider(group2, 60)
         
-        # Credentials status
+        # Status & Action (Base: 0)
         creds_status = "✓ Saved" if self.cache_manager.credentials_exist() else "✗ Not saved"
-        creds_label = self._create_secondary_label(f"Status: {creds_status}", (20, y_pos))
-        container.addSubview_(creds_label)
+        status_label = self._create_secondary_label(f"Status: {creds_status}", (20, 0 + 22))
+        group2.addSubview_(status_label)
         
-        y_pos -= 35
-        
-        # Add divider before action buttons
-        divider4 = NSView.alloc().initWithFrame_(((20, y_pos + 5), (470, 0.5)))
-        divider4.setWantsLayer_(True)
-        divider4.layer().setBackgroundColor_(NSColor.separatorColor().CGColor())
-        container.addSubview_(divider4)
-        
-        # Action buttons
-        y_pos -= 35
-        
-        # Test Connection button
-        test_btn = NSButton.alloc().initWithFrame_(((20, y_pos), (150, 28)))
+        test_btn = NSButton.alloc().initWithFrame_(((200, 0 + 16), (130, 28)))
         test_btn.setTitle_("Test Connection")
-        test_btn.setBezelStyle_(2)  # Rounded button
+        test_btn.setBezelStyle_(2)
         test_btn.setTarget_(self._action_handler)
         test_btn.setAction_("testConnectionClicked:")
-        container.addSubview_(test_btn)
+        group2.addSubview_(test_btn)
         
-        # Clear Credentials button
-        clear_btn = NSButton.alloc().initWithFrame_(((180, y_pos), (150, 28)))
+        clear_btn = NSButton.alloc().initWithFrame_(((350, 0 + 16), (130, 28)))
         clear_btn.setTitle_("Clear Credentials")
-        clear_btn.setBezelStyle_(2)  # Rounded button
+        clear_btn.setBezelStyle_(2)
         clear_btn.setTarget_(self._action_handler)
         clear_btn.setAction_("clearCredentialsClicked:")
-        container.addSubview_(clear_btn)
+        group2.addSubview_(clear_btn)
         
         self._content_view.addSubview_(container)
     
     def _create_sites_content(self):
-        """Create Sites settings content with enhanced styling."""
-        container = NSView.alloc().initWithFrame_(((0, 0), (560, 460)))
-        container.setWantsLayer_(True)
-        container.layer().setBackgroundColor_(NSColor.controlBackgroundColor().CGColor())
+        """Create Sites settings content using modern Card UI."""
+        container = NSView.alloc().initWithFrame_(((0, 0), (580, 550)))
         
-        # Section title
-        title = self._create_section_title("Sites", (20, 430))
+        title = self._create_section_title("Sites", (40, 480))
         container.addSubview_(title)
         
-        # Section description
-        desc = self._create_section_description(
-            "Manage URLs for torrent websites",
-            (20, 410)
-        )
-        container.addSubview_(desc)
-        
-        # Add divider line
-        divider = NSView.alloc().initWithFrame_(((20, 395), (620, 0.5)))
-        divider.setWantsLayer_(True)
-        divider.layer().setBackgroundColor_(NSColor.separatorColor().CGColor())
-        container.addSubview_(divider)
-        
-        y_pos = 365
+        group = self._create_settings_group(((40, 210), (500, 240)), container)
         
         sites = [
-            ("rutor.info", "site_rutor", self.site_rutor_url, "🇷🇺"),
-            ("yts.mx", "site_yts", self.site_yts_url, "🎬"),
-            ("ext.to", "site_ext", self.site_ext_url, "⚡"),
             ("nyaa.si", "site_nyaa", self.site_nyaa_url, "🎌"),
+            ("ext.to", "site_ext", self.site_ext_url, "⚡"),
+            ("yts.mx", "site_yts", self.site_yts_url, "🎬"),
+            ("rutor.info", "site_rutor", self.site_rutor_url, "🇷🇺"),
         ]
         
-        for site_name, field_key, site_url, emoji in sites:
-            # Site name with emoji
-            label = self._create_modern_label(f"{emoji} {site_name}", (20, y_pos))
-            container.addSubview_(label)
+        # Top down: i=0 is top, base=180. i=3 is bottom, base=0.
+        for i, (site_name, field_key, site_url, emoji) in enumerate(sites):
+            y_base = 180 - (i * 60)
             
-            y_pos -= 30
-            field = NSTextField.alloc().initWithFrame_(((20, y_pos), (620, 24)))
+            label = self._create_modern_label(f"{emoji} {site_name}", (20, y_base + 20))
+            group.addSubview_(label)
+            
+            field = NSTextField.alloc().initWithFrame_(((150, y_base + 18), (330, 24)))
             field.setStringValue_(site_url)
-            field.setBezelStyle_(1)  # Sunken bezeled
-            container.addSubview_(field)
+            field.setBezelStyle_(1)
+            group.addSubview_(field)
             self._settings_fields[field_key] = field
             
-            y_pos -= 50
-            
-            # Add divider between sites
-            if site_name != "nyaa.si":  # Don't add divider after last item
-                divider_line = NSView.alloc().initWithFrame_(((20, y_pos + 5), (620, 0.5)))
-                divider_line.setWantsLayer_(True)
-                divider_line.layer().setBackgroundColor_(NSColor.separatorColor().CGColor())
-                container.addSubview_(divider_line)
-        
+            if i < 3:
+                self._add_divider(group, y_base)
+                
         self._content_view.addSubview_(container)
-    
-    def _create_section_title(self, title, position):
-        """Create an enhanced section title label."""
-        label = NSTextField.alloc().initWithFrame_((position, (660, 28)))
-        label.setStringValue_(title)
-        label.setBezeled_(False)
-        label.setDrawsBackground_(False)
-        label.setEditable_(False)
-        label.setSelectable_(False)
-        font = NSFont.systemFontOfSize_weight_(20, 1.0)  # Bold, larger
-        label.setFont_(font)
-        label.setTextColor_(NSColor.labelColor())
-        return label
-    
-    def _create_section_description(self, description, position):
-        """Create an enhanced section description label."""
-        label = NSTextField.alloc().initWithFrame_((position, (660, 18)))
-        label.setStringValue_(description)
-        label.setBezeled_(False)
-        label.setDrawsBackground_(False)
-        label.setEditable_(False)
-        label.setSelectable_(False)
-        font = NSFont.systemFontOfSize_(12)
-        label.setFont_(font)
-        label.setTextColor_(NSColor.secondaryLabelColor())
-        return label
-    
-    def _save_settings_clicked_(self, sender):
-        """Handle save button click."""
-        self._save_all_settings()
-        self._close_settings_(sender)
     
     def _close_settings_(self, sender):
         """Close the settings window."""
         if hasattr(self, '_settings_window'):
             self._settings_window.close()
             NSApp().stopModalWithCode_(0)
-    
-    def _create_modern_label(self, text, position):
-        """Create a modern macOS style label."""
-        label = NSTextField.alloc().initWithFrame_((position, (460, 16)))
-        label.setStringValue_(text)
-        label.setBezeled_(False)
-        label.setDrawsBackground_(False)
-        label.setEditable_(False)
-        label.setSelectable_(False)
-        # Make font medium weight
-        font = NSFont.systemFontOfSize_weight_(13, 0.23)  # Medium
-        label.setFont_(font)
-        label.setTextColor_(NSColor.labelColor())
-        return label
-    
-    def _create_secondary_label(self, text, position):
-        """Create a secondary text label with smaller font."""
-        label = NSTextField.alloc().initWithFrame_((position, (470, 14)))
-        label.setStringValue_(text)
-        label.setBezeled_(False)
-        label.setDrawsBackground_(False)
-        label.setEditable_(False)
-        label.setSelectable_(False)
-        font = NSFont.systemFontOfSize_(11)
-        label.setFont_(font)
-        label.setTextColor_(NSColor.secondaryLabelColor())
-        return label
     
     def _save_all_settings(self):
         """Save all settings from all tabs."""
@@ -1514,6 +1373,29 @@ class MacOSGUIManager:
             title: Notification title
             message: Notification message
         """
+        if HAS_USER_NOTIFICATIONS:
+            try:
+                center = UNUserNotificationCenter.currentNotificationCenter()
+                content = UNMutableNotificationContent.alloc().init()
+                content.setTitle_(title)
+                content.setBody_(message)
+                
+                identifier = f"MagnetLinker-{time.time()}"
+                request = UNNotificationRequest.requestWithIdentifier_content_trigger_(
+                    identifier, content, None
+                )
+                
+                def completion_handler(error):
+                    if error:
+                        print(f"[DEBUG] Error delivering notification: {error}")
+                        
+                center.addNotificationRequest_withCompletionHandler_(request, completion_handler)
+                return
+            except Exception as e:
+                print(f"[DEBUG] Error showing banner notification: {e}")
+                # Fall back to alert on error
+                
+        # Fallback to standard alert if UNUserNotificationCenter is not available
         try:
             alert = NSAlert.alloc().init()
             if self._get_app_icon():
