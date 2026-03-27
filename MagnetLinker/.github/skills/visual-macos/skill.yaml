@@ -1,0 +1,16 @@
+name: macos-tahoe-26-designer
+description: Expert macOS Tahoe 26 Liquid Glass theme generator. Native AppKit/PyObjC + CustomTkinter/PyQt/Tkinter/Kivy/Flet. Translucent reflections, system tints, SF Pro, fluid animations.
+when_to_use: |
+  - "Tahoe 26", "Liquid Glass", "macOS glass UI", "AppKit theme"
+  - Python GUI: translucency, blur, tinted icons, rounded controls
+  - "visionOS style", "Tahoe sidebar", "transparent menu bar"
+how_it_works: |
+  Applies full Tahoe spec: NSVisualEffectView for true glass, rgba/blur approx, palettes, constraints.
+  Detects framework, generates code + migration. References Apple HIG.
+prerequisites:
+  - AppKit: pyobjc-framework-Cocoa
+  - CustomTkinter, PyQt6, etc. per framework
+example_prompts:
+  - "Tahoe 26 AppKit window with glass sidebar"
+  - "Liquid Glass PyQt dashboard"
+  - "CustomTkinter Tahoe theme [code]"
