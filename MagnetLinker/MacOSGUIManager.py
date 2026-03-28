@@ -16,7 +16,7 @@ from AppKit import (
     NSSecureTextField, NSTextField, NSButton, NSWindowStyleMaskTitled,
     NSWindowStyleMaskClosable, NSWindowStyleMaskMiniaturizable,
     NSBackingStoreBuffered, NSPasteboard, NSPasteboardTypeString, NSString, NSArray,
-    NSView, NSImage, NSApp, NSColor, NSFont, NSPanel, NSScrollView,
+    NSView, NSImage, NSApp, NSColor, NSFont, NSPanel, NSWindow, NSScrollView,
     NSVisualEffectView, NSVisualEffectBlendingModeBehindWindow, NSVisualEffectStateActive
 )
 from Foundation import NSThread, NSOperationQueue, NSBlockOperation, NSObject
@@ -724,7 +724,7 @@ class MacOSGUIManager:
         self._action_handler = SettingsActionHandler.alloc().initWithManager_(self)
         
         # Create a thoroughly modern window (transparent titlebar merging with content)
-        window = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+        window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             ((100, 100), (800, 600)),
             NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskFullSizeContentView,
             NSBackingStoreBuffered,
@@ -735,8 +735,8 @@ class MacOSGUIManager:
         window.setTitle_("Settings")
         window.center()
         
-        from AppKit import NSFloatingWindowLevel
-        window.setLevel_(NSFloatingWindowLevel)
+        # Ensure the window is key and frontmost
+        window.makeKeyAndOrderFront_(None)
         
         try:
             NSApp().activateIgnoringOtherApps_(True)
@@ -824,6 +824,9 @@ class MacOSGUIManager:
         delegate = SettingsWindowDelegate.alloc().init()
         window.setDelegate_(delegate)
         self._settings_window_delegate = delegate
+
+        # Set up Edit menu for keyboard shortcuts in the settings window
+        self._setup_edit_menu()
 
         NSApp().runModalForWindow_(window)
     
@@ -928,6 +931,69 @@ class MacOSGUIManager:
             self._create_sites_content()
         
         self._current_settings_section = section_name
+        
+        # Set keyboard focus to the first text field in the section
+        self._set_initial_focus(section_name)
+    
+    def _set_initial_focus(self, section_name):
+        """Set keyboard focus to the first text field in the current section."""
+        try:
+            if section_name == "General" and 'cache_duration' in self._settings_fields:
+                self._settings_window.makeFirstResponder_(self._settings_fields['cache_duration'])
+            elif section_name == "Directories" and 'series_dir' in self._settings_fields:
+                self._settings_window.makeFirstResponder_(self._settings_fields['series_dir'])
+            elif section_name == "qBittorrent" and 'qb_url' in self._settings_fields:
+                self._settings_window.makeFirstResponder_(self._settings_fields['qb_url'])
+            elif section_name == "Sites" and hasattr(self, '_site_rows') and self._site_rows:
+                self._settings_window.makeFirstResponder_(self._site_rows[0]['name_field'])
+        except Exception as e:
+            print(f"[DEBUG] Error setting initial focus: {e}")
+    
+    def _setup_edit_menu(self):
+        """Set up the Edit menu with standard keyboard shortcuts for the settings window."""
+        try:
+            from AppKit import NSMenu, NSMenuItem
+            
+            mainMenu = NSApplication.sharedApplication().mainMenu()
+            if mainMenu is None:
+                mainMenu = NSMenu.alloc().init()
+                NSApplication.sharedApplication().setMainMenu_(mainMenu)
+            
+            # Check if Edit menu already exists
+            editMenu = None
+            for item in mainMenu.itemArray():
+                if item.title() == "Edit":
+                    editMenu = item.submenu()
+                    break
+            
+            if editMenu is None:
+                editMenu = NSMenu.alloc().initWithTitle_("Edit")
+                editItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Edit", None, "")
+                editItem.setSubmenu_(editMenu)
+                mainMenu.addItem_(editItem)
+            
+            # Add standard edit items if not present
+            if editMenu.numberOfItems() == 0:
+                undoItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Undo", "undo:", "z")
+                editMenu.addItem_(undoItem)
+                
+                editMenu.addItem_(NSMenuItem.separatorItem())
+                
+                cutItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Cut", "cut:", "x")
+                editMenu.addItem_(cutItem)
+                
+                copyItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Copy", "copy:", "c")
+                editMenu.addItem_(copyItem)
+                
+                pasteItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Paste", "paste:", "v")
+                editMenu.addItem_(pasteItem)
+                
+                editMenu.addItem_(NSMenuItem.separatorItem())
+                
+                selectAllItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Select All", "selectAll:", "a")
+                editMenu.addItem_(selectAllItem)
+        except Exception as e:
+            print(f"[DEBUG] Error setting up Edit menu: {e}")
     
     def _settings_test_connection_(self, sender):
         """Settings callback: Test qBittorrent connection."""
@@ -998,6 +1064,8 @@ class MacOSGUIManager:
         cache_field = NSTextField.alloc().initWithFrame_(((400, 140 + 24), (80, 24)))
         cache_field.setStringValue_(str(self.cache_duration_minutes))
         cache_field.setBezelStyle_(1)
+        cache_field.setEditable_(True)
+        cache_field.setSelectable_(True)
         group2.addSubview_(cache_field)
         self._settings_fields['cache_duration'] = cache_field
         
@@ -1026,6 +1094,8 @@ class MacOSGUIManager:
         interval_field = NSTextField.alloc().initWithFrame_(((400, 0 + 24), (80, 24)))
         interval_field.setStringValue_(str(self.clipboard_check_interval))
         interval_field.setBezelStyle_(1)
+        interval_field.setEditable_(True)
+        interval_field.setSelectable_(True)
         group2.addSubview_(interval_field)
         self._settings_fields['clipboard_interval'] = interval_field
         
@@ -1048,6 +1118,8 @@ class MacOSGUIManager:
         series_field = NSTextField.alloc().initWithFrame_(((180, 60 + 18), (300, 24)))
         series_field.setStringValue_(self.api_client.series_directory)
         series_field.setBezelStyle_(1)
+        series_field.setEditable_(True)
+        series_field.setSelectable_(True)
         group.addSubview_(series_field)
         self._settings_fields['series_dir'] = series_field
         
@@ -1060,6 +1132,8 @@ class MacOSGUIManager:
         movies_field = NSTextField.alloc().initWithFrame_(((180, 0 + 18), (300, 24)))
         movies_field.setStringValue_(self.api_client.movies_directory)
         movies_field.setBezelStyle_(1)
+        movies_field.setEditable_(True)
+        movies_field.setSelectable_(True)
         group.addSubview_(movies_field)
         self._settings_fields['movies_dir'] = movies_field
         
@@ -1081,6 +1155,8 @@ class MacOSGUIManager:
         url_field = NSTextField.alloc().initWithFrame_(((150, 18), (330, 24)))
         url_field.setStringValue_(self.api_client.qbittorrent_url)
         url_field.setBezelStyle_(1)
+        url_field.setEditable_(True)
+        url_field.setSelectable_(True)
         group1.addSubview_(url_field)
         self._settings_fields['qb_url'] = url_field
         
@@ -1094,6 +1170,8 @@ class MacOSGUIManager:
         user_field = NSTextField.alloc().initWithFrame_(((150, 120 + 18), (330, 24)))
         user_field.setPlaceholderString_("Optional")
         user_field.setBezelStyle_(1)
+        user_field.setEditable_(True)
+        user_field.setSelectable_(True)
         try:
             if self.cache_manager.credentials_exist():
                 creds = self.cache_manager.load_credentials()
@@ -1113,6 +1191,8 @@ class MacOSGUIManager:
         pass_field = NSSecureTextField.alloc().initWithFrame_(((150, 60 + 18), (330, 24)))
         pass_field.setPlaceholderString_("Optional")
         pass_field.setBezelStyle_(1)
+        pass_field.setEditable_(True)
+        pass_field.setSelectable_(True)
         group2.addSubview_(pass_field)
         self._settings_fields['qb_pass'] = pass_field
         
@@ -1193,6 +1273,8 @@ class MacOSGUIManager:
             name_field.setStringValue_(site.get("name", ""))
             name_field.setPlaceholderString_("Site Name")
             name_field.setBezelStyle_(1)
+            name_field.setEditable_(True)
+            name_field.setSelectable_(True)
             self.sites_document_view.addSubview_(name_field)
             
             # Site URL Field
@@ -1200,6 +1282,8 @@ class MacOSGUIManager:
             url_field.setStringValue_(site.get("url", ""))
             url_field.setPlaceholderString_("https://...")
             url_field.setBezelStyle_(1)
+            url_field.setEditable_(True)
+            url_field.setSelectable_(True)
             self.sites_document_view.addSubview_(url_field)
             
             # Remove Button
