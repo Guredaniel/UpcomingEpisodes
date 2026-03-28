@@ -379,7 +379,13 @@ class MacOSGUIManager:
     
     def _menu_settings(self, sender):
         """Menu callback: Open settings dialog."""
-        self.show_settings_dialog()
+        try:
+            self.show_settings_dialog()
+        except Exception as e:
+            print(f"[DEBUG] Error opening settings dialog: {e}")
+            import traceback
+            traceback.print_exc()
+            self.handle_error(f"Failed to open settings dialog: {e}")
     
     def _menu_toggle_clipboard(self, sender):
         """Menu callback: Toggle clipboard monitoring."""
@@ -724,7 +730,7 @@ class MacOSGUIManager:
         self._action_handler = SettingsActionHandler.alloc().initWithManager_(self)
         
         # Create a thoroughly modern window (transparent titlebar merging with content)
-        window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+        window = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             ((100, 100), (800, 600)),
             NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskFullSizeContentView,
             NSBackingStoreBuffered,
@@ -734,6 +740,9 @@ class MacOSGUIManager:
         window.setTitleVisibility_(NSWindowTitleHidden)
         window.setTitle_("Settings")
         window.center()
+        
+        from AppKit import NSFloatingWindowLevel
+        window.setLevel_(NSFloatingWindowLevel)
         
         # Ensure the window is key and frontmost
         window.makeKeyAndOrderFront_(None)
@@ -826,7 +835,10 @@ class MacOSGUIManager:
         self._settings_window_delegate = delegate
 
         # Set up Edit menu for keyboard shortcuts in the settings window
-        self._setup_edit_menu()
+        try:
+            self._setup_edit_menu()
+        except Exception as e:
+            print(f"[DEBUG] Failed to setup Edit menu: {e}")
 
         NSApp().runModalForWindow_(window)
     
