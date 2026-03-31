@@ -1085,8 +1085,8 @@ class MacOSGUIManager:
         # Group 2: Cache & Monitoring (3 rows, 70px each, Total Height 210)
         group2 = self._create_settings_group(((40, 160), (500, 210)), container)
         
-        # Row 1: Cache duration (Base: 140)
-        cache_label = self._create_modern_label("Cache Duration (minutes)", (20, 140 + 38))
+        # Row 1: Cache selection duration (Base: 140)
+        cache_label = self._create_modern_label("Cache Selection Duration (minutes)", (20, 140 + 38))
         group2.addSubview_(cache_label)
         cache_help = self._create_secondary_label("0 = always ask, 30 = remember for 30 mins", (20, 140 + 16))
         group2.addSubview_(cache_help)
