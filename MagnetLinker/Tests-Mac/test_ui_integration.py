@@ -28,12 +28,12 @@ class TestSettingsSave(unittest.TestCase):
             "cache_duration_minutes": 30.0,
             "indefinite_selection": False,
             "site_rutor_url": "https://rutor.info",
-            "site_yts_url": "https://yts.mx",
             "site_ext_url": "https://ext.to",
             "site_nyaa_url": "https://nyaa.si",
         }.get(key, default)
         
         self.mock_cache.credentials_exist.return_value = False
+        self.mock_cache.get_saved_sites.return_value = []
         self.mock_api.qbittorrent_url = "http://localhost:8080"
         self.mock_api.series_directory = "/Series"
         self.mock_api.movies_directory = "/Movies"
@@ -113,11 +113,11 @@ class TestErrorHandling(unittest.TestCase):
             "cache_duration_minutes": 30.0,
             "indefinite_selection": False,
             "site_rutor_url": "https://rutor.info",
-            "site_yts_url": "https://yts.mx",
             "site_ext_url": "https://ext.to",
             "site_nyaa_url": "https://nyaa.si",
         }.get(key, default)
         
+        self.mock_cache.get_saved_sites.return_value = []
         self.mock_api.qbittorrent_url = "http://localhost:8080"
         self.mock_api.series_directory = "/Series"
         self.mock_api.movies_directory = "/Movies"
@@ -150,7 +150,7 @@ class TestConnectionManagement(unittest.TestCase):
             "cache_duration_minutes": 30.0,
             "indefinite_selection": False,
             "site_rutor_url": "https://rutor.info",
-            "site_yts_url": "https://yts.mx",
+
             "site_ext_url": "https://ext.to",
             "site_nyaa_url": "https://nyaa.si",
         }.get(key, default)
@@ -158,6 +158,7 @@ class TestConnectionManagement(unittest.TestCase):
         self.mock_cache.credentials_exist.return_value = True
         self.mock_cache.load_credentials.return_value = ("user", "pass")
         self.mock_cache.clear_credentials = Mock()
+        self.mock_cache.get_saved_sites.return_value = []
         
         self.mock_api.qbittorrent_url = "http://localhost:8080"
         self.mock_api.series_directory = "/Series"
@@ -197,11 +198,11 @@ class TestSettingsPersistence(unittest.TestCase):
             "cache_duration_minutes": 30.0,
             "indefinite_selection": False,
             "site_rutor_url": "https://rutor.info",
-            "site_yts_url": "https://yts.mx",
             "site_ext_url": "https://ext.to",
             "site_nyaa_url": "https://nyaa.si",
         }.get(key, default)
         
+        self.mock_cache.get_saved_sites.return_value = []
         self.mock_api.qbittorrent_url = "http://localhost:8080"
         self.mock_api.series_directory = "/Series"
         self.mock_api.movies_directory = "/Movies"
@@ -239,7 +240,7 @@ class TestSidebarNavigation(unittest.TestCase):
             "cache_duration_minutes": 30.0,
             "indefinite_selection": False,
             "site_rutor_url": "https://rutor.info",
-            "site_yts_url": "https://yts.mx",
+
             "site_ext_url": "https://ext.to",
             "site_nyaa_url": "https://nyaa.si",
         }.get(key, default)
@@ -248,6 +249,7 @@ class TestSidebarNavigation(unittest.TestCase):
         self.mock_api.series_directory = "/Series"
         self.mock_api.movies_directory = "/Movies"
         self.mock_cache.credentials_exist.return_value = True
+        self.mock_cache.get_saved_sites.return_value = []
         
         self.gui = MacOSGUIManager(self.mock_cache, self.mock_api)
     
@@ -303,12 +305,13 @@ class TestActionButtons(unittest.TestCase):
             "cache_duration_minutes": 30.0,
             "indefinite_selection": False,
             "site_rutor_url": "https://rutor.info",
-            "site_yts_url": "https://yts.mx",
+
             "site_ext_url": "https://ext.to",
             "site_nyaa_url": "https://nyaa.si",
         }.get(key, default)
         
         self.mock_cache.credentials_exist.return_value = True
+        self.mock_cache.get_saved_sites.return_value = []
         self.mock_api.qbittorrent_url = "http://localhost:8080"
         self.mock_api.series_directory = "/Series"
         self.mock_api.movies_directory = "/Movies"

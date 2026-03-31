@@ -61,7 +61,6 @@ class GUIManager:
 
         # Sites settings (defaults provided)
         self.site_rutor_url = self.cache_manager.load_setting("site_rutor_url", "https://rutor.info")
-        self.site_yts_url = self.cache_manager.load_setting("site_yts_url", "https://yts.mx")
         self.site_ext_url = self.cache_manager.load_setting("site_ext_url", "https://ext.to")
         self.site_nyaa_url = self.cache_manager.load_setting("site_nyaa_url", "https://nyaa.si")
 
@@ -141,15 +140,13 @@ class GUIManager:
         self.sites_frame = tk.Frame(btn_frame)
 
         self.rutor_btn = tk.Button(self.sites_frame, text="rutor", command=lambda: webbrowser.open(self.site_rutor_url), width=9, height=1)
-        self.yts_btn = tk.Button(self.sites_frame, text="yts.mx", command=lambda: webbrowser.open(self.site_yts_url), width=9, height=1)
         self.ext_btn = tk.Button(self.sites_frame, text="ext.to", command=lambda: webbrowser.open(self.site_ext_url), width=9, height=1)
         self.nyaa_btn = tk.Button(self.sites_frame, text="nyaa.si", command=lambda: webbrowser.open(self.site_nyaa_url), width=9, height=1)
 
         # Place buttons in 2 columns
         self.rutor_btn.grid(row=0, column=0, padx=0, pady=2, sticky="ew")
-        self.yts_btn.grid(row=0, column=1, padx=0, pady=2, sticky="ew")
-        self.ext_btn.grid(row=1, column=0, padx=0, pady=2, sticky="ew")
-        self.nyaa_btn.grid(row=1, column=1, padx=0, pady=2, sticky="ew")
+        self.ext_btn.grid(row=0, column=1, padx=0, pady=2, sticky="ew")
+        self.nyaa_btn.grid(row=1, column=0, padx=0, pady=2, sticky="ew")
 
         # Make columns expand evenly
         self.sites_frame.grid_columnconfigure(0, weight=1)
@@ -195,12 +192,6 @@ class GUIManager:
         rutor_entry.pack(pady=(0, 2), padx=10, fill=tk.X)
         rutor_entry.bind("<FocusOut>", lambda e: self.save_site_setting('site_rutor_url', rutor_entry.get().strip()))
 
-        self.configure_ctk_label(sites_tab, "yts.mx URL:")
-        yts_entry = CTkEntry(sites_tab, width=40, fg_color="gray25", text_color="white")
-        yts_entry.insert(0, self.site_yts_url)
-        yts_entry.pack(pady=(0, 2), padx=10, fill=tk.X)
-        yts_entry.bind("<FocusOut>", lambda e: self.save_site_setting('site_yts_url', yts_entry.get().strip()))
-
         self.configure_ctk_label(sites_tab, "ext.to URL:")
         ext_entry = CTkEntry(sites_tab, width=40, fg_color="gray25", text_color="white")
         ext_entry.insert(0, self.site_ext_url)
@@ -223,8 +214,6 @@ class GUIManager:
         try:
             if key == 'site_rutor_url' and hasattr(self, 'rutor_btn'):
                 self.rutor_btn.configure(command=lambda: webbrowser.open(self.site_rutor_url))
-            elif key == 'site_yts_url' and hasattr(self, 'yts_btn'):
-                self.yts_btn.configure(command=lambda: webbrowser.open(self.site_yts_url))
             elif key == 'site_ext_url' and hasattr(self, 'ext_btn'):
                 self.ext_btn.configure(command=lambda: webbrowser.open(self.site_ext_url))
             elif key == 'site_nyaa_url' and hasattr(self, 'nyaa_btn'):
@@ -896,7 +885,6 @@ class GUIManager:
                 'Sites',
                 Menu(
                     MenuItem('rutor.info', lambda icon, item: webbrowser.open(self.site_rutor_url)),
-                    MenuItem('yts.mx', lambda icon, item: webbrowser.open(self.site_yts_url)),
                     MenuItem('ext.to', lambda icon, item: webbrowser.open(self.site_ext_url)),
                     MenuItem('nyaa.si', lambda icon, item: webbrowser.open(self.site_nyaa_url))
                 )

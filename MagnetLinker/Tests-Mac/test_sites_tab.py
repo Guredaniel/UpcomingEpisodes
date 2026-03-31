@@ -25,7 +25,6 @@ def test_sites_tab():
     print("✓ Manager initialized")
     print(f"✓ Site URLs loaded:")
     print(f"  - rutor.info: {mgr.site_rutor_url}")
-    print(f"  - yts.mx: {mgr.site_yts_url}")
     print(f"  - ext.to: {mgr.site_ext_url}")
     print(f"  - nyaa.si: {mgr.site_nyaa_url}")
     

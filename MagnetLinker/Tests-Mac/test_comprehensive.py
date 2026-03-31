@@ -30,13 +30,13 @@ class TestMagnetLinkProcessing(unittest.TestCase):
             "cache_duration_minutes": 30.0,
             "indefinite_selection": False,
             "site_rutor_url": "https://rutor.info",
-            "site_yts_url": "https://yts.mx",
             "site_ext_url": "https://ext.to",
             "site_nyaa_url": "https://nyaa.si",
         }.get(key, default)
         
         self.mock_cache.credentials_exist.return_value = True
         self.mock_cache.load_credentials.return_value = ("user", "pass")
+        self.mock_cache.get_saved_sites.return_value = []
         
         self.mock_api.qbittorrent_url = "http://localhost:8080"
         self.mock_api.series_directory = "/Series"
@@ -136,12 +136,12 @@ class TestSettingsValidation(unittest.TestCase):
             "cache_duration_minutes": 30.0,
             "indefinite_selection": False,
             "site_rutor_url": "https://rutor.info",
-            "site_yts_url": "https://yts.mx",
             "site_ext_url": "https://ext.to",
             "site_nyaa_url": "https://nyaa.si",
         }.get(key, default)
         
         self.mock_cache.credentials_exist.return_value = True
+        self.mock_cache.get_saved_sites.return_value = []
         self.mock_api.qbittorrent_url = "http://localhost:8080"
         self.mock_api.series_directory = "/Series"
         self.mock_api.movies_directory = "/Movies"
@@ -204,13 +204,14 @@ class TestSettingsDialog(unittest.TestCase):
             "cache_duration_minutes": 30.0,
             "indefinite_selection": False,
             "site_rutor_url": "https://rutor.info",
-            "site_yts_url": "https://yts.mx",
+
             "site_ext_url": "https://ext.to",
             "site_nyaa_url": "https://nyaa.si",
         }.get(key, default)
         
         self.mock_cache.credentials_exist.return_value = True
         self.mock_cache.load_credentials.return_value = ("user", "pass")
+        self.mock_cache.get_saved_sites.return_value = []
         
         self.mock_api.qbittorrent_url = "http://localhost:8080"
         self.mock_api.series_directory = "/Series"
@@ -237,7 +238,6 @@ class TestSettingsDialog(unittest.TestCase):
     def test_site_urls_loading(self):
         """Test site URLs load correctly."""
         self.assertEqual(self.gui.site_rutor_url, "https://rutor.info")
-        self.assertEqual(self.gui.site_yts_url, "https://yts.mx")
         self.assertEqual(self.gui.site_ext_url, "https://ext.to")
         self.assertEqual(self.gui.site_nyaa_url, "https://nyaa.si")
         print("✓ Site URLs loading works")
@@ -261,11 +261,11 @@ class TestDialogs(unittest.TestCase):
             "cache_duration_minutes": 30.0,
             "indefinite_selection": False,
             "site_rutor_url": "https://rutor.info",
-            "site_yts_url": "https://yts.mx",
             "site_ext_url": "https://ext.to",
             "site_nyaa_url": "https://nyaa.si",
         }.get(key, default)
         self.mock_cache.credentials_exist.return_value = True
+        self.mock_cache.get_saved_sites.return_value = []
         self.mock_api.qbittorrent_url = "http://localhost:8080"
         self.mock_api.series_directory = "/Series"
         self.mock_api.movies_directory = "/Movies"
@@ -348,12 +348,13 @@ class TestMenuItems(unittest.TestCase):
             "cache_duration_minutes": 30.0,
             "indefinite_selection": False,
             "site_rutor_url": "https://rutor.info",
-            "site_yts_url": "https://yts.mx",
+
             "site_ext_url": "https://ext.to",
             "site_nyaa_url": "https://nyaa.si",
         }.get(key, default)
         
         self.mock_cache.credentials_exist.return_value = True
+        self.mock_cache.get_saved_sites.return_value = []
         self.mock_api.qbittorrent_url = "http://localhost:8080"
         self.mock_api.series_directory = "/Series"
         self.mock_api.movies_directory = "/Movies"
@@ -395,13 +396,13 @@ class TestCredentialsManagement(unittest.TestCase):
             "cache_duration_minutes": 30.0,
             "indefinite_selection": False,
             "site_rutor_url": "https://rutor.info",
-            "site_yts_url": "https://yts.mx",
             "site_ext_url": "https://ext.to",
             "site_nyaa_url": "https://nyaa.si",
         }.get(key, default)
         
         self.mock_cache.credentials_exist.return_value = True
         self.mock_cache.load_credentials.return_value = ("user", "pass")
+        self.mock_cache.get_saved_sites.return_value = []
         
         self.mock_api.qbittorrent_url = "http://localhost:8080"
         self.mock_api.series_directory = "/Series"
@@ -435,11 +436,11 @@ class TestDirectoryConfiguration(unittest.TestCase):
             "cache_duration_minutes": 30.0,
             "indefinite_selection": False,
             "site_rutor_url": "https://rutor.info",
-            "site_yts_url": "https://yts.mx",
             "site_ext_url": "https://ext.to",
             "site_nyaa_url": "https://nyaa.si",
         }.get(key, default)
         
+        self.mock_cache.get_saved_sites.return_value = []
         self.mock_api.qbittorrent_url = "http://localhost:8080"
         self.mock_api.series_directory = "/Series"
         self.mock_api.movies_directory = "/Movies"
@@ -470,11 +471,12 @@ class TestQBittorrentConnection(unittest.TestCase):
             "cache_duration_minutes": 30.0,
             "indefinite_selection": False,
             "site_rutor_url": "https://rutor.info",
-            "site_yts_url": "https://yts.mx",
+
             "site_ext_url": "https://ext.to",
             "site_nyaa_url": "https://nyaa.si",
         }.get(key, default)
         
+        self.mock_cache.get_saved_sites.return_value = []
         self.mock_api.qbittorrent_url = "http://localhost:8080"
         self.mock_api.series_directory = "/Series"
         self.mock_api.movies_directory = "/Movies"

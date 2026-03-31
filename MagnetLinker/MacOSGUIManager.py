@@ -149,6 +149,20 @@ class MacOSGUIManager:
             "clipboard_check_interval", 0.5
         )
         
+        # Site URLs
+        self.site_rutor_url = self.cache_manager.load_setting(
+            "site_rutor_url", "https://rutor.info"
+        )
+        self.site_ext_url = self.cache_manager.load_setting(
+            "site_ext_url", "https://ext.to"
+        )
+        self.site_nyaa_url = self.cache_manager.load_setting(
+            "site_nyaa_url", "https://nyaa.si"
+        )
+        self.site_ktuvit_url = self.cache_manager.load_setting(
+            "site_ktuvit_url", "https://www.ktuvit.me"
+        )
+        
         # Dynamic Sites
         self.saved_sites = self.cache_manager.get_saved_sites()
         self._working_sites = list(self.saved_sites)
@@ -159,6 +173,10 @@ class MacOSGUIManager:
         self.clipboard_monitor_running = False
         self.magnet_queue = queue.Queue()  # Thread-safe queue for magnet links
         self.clipboard_monitor_thread = None
+        
+        # Settings UI state
+        self._current_settings_section = "General"
+        self._settings_fields = {}
         
         # Create the rumps app
         self._create_menu_bar_app()

@@ -120,10 +120,10 @@ class CacheManager:
     def get_saved_sites(self):
         """Get the list of saved torrent sites."""
         default_sites = [
-            {"name": "🎌 nyaa.si", "url": "https://nyaa.si"},
-            {"name": "⚡ ext.to", "url": "https://ext.to"},
-            {"name": "🎬 yts.mx", "url": "https://yts.mx"},
-            {"name": "🇷🇺 rutor.info", "url": "https://rutor.info"}
+            {"name": "nyaa.si", "url": "https://nyaa.si"},
+            {"name": "ext.to", "url": "https://ext.to"},
+            {"name": "rutor.info", "url": "https://rutor.info"},
+            {"name": "ktuvit.me", "url": "https://www.ktuvit.me"}
         ]
         return self.load_setting("saved_sites", default_sites)
 
