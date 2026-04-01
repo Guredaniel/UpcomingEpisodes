@@ -5,9 +5,9 @@ import webbrowser
 class APIClient:
     def __init__(self, cache_manager):
         self.cache_manager = cache_manager
-        self.qbittorrent_url = self.cache_manager.load_setting("qbittorrent_url", "http://192.168.1.113:8080/")
-        self.series_directory = self.cache_manager.load_setting("series_directory", "/media/external/Series")
-        self.movies_directory = self.cache_manager.load_setting("movies_directory", "/media/external/Movies")
+        self.qbittorrent_url = self.cache_manager.load_setting("qbittorrent_url", "http://192.168.1.111:8080/")
+        self.series_directory = self.cache_manager.load_setting("series_directory", "/media/elements/Series")
+        self.movies_directory = self.cache_manager.load_setting("movies_directory", "/media/elements/Movies")
 
     def open_qbittorrent_with_magnet(self, magnet_url, is_series=False):
         """Send the magnet URL to the qBittorrent web interface with authentication and optional save path."""

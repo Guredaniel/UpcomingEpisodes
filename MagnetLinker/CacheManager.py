@@ -4,9 +4,37 @@ import json
 import time
 import sys
 from cryptography.fernet import Fernet
+
 class CacheManager:
+    CACHE_VERSION = "1.0"  # Increment this when cache format changes
+    
     def __init__(self):
+        self.check_cache_version()
         self.key = self.load_or_generate_key()
+
+    def check_cache_version(self):
+        """Check cache version and update if necessary. Cache is always preserved."""
+        version_path = os.path.join(self.get_cache_directory(), "version.txt")
+        try:
+            # Always write current version (cache is preserved across versions)
+            with open(version_path, "w") as f:
+                f.write(self.CACHE_VERSION)
+        except Exception as e:
+            # If we can't write version, silently continue
+            print(f"Warning: Could not write cache version: {e}")
+            pass
+
+    def clear_all_cache(self):
+        """Clear all cache files."""
+        cache_dir = self.get_cache_directory()
+        if os.path.exists(cache_dir):
+            for filename in os.listdir(cache_dir):
+                file_path = os.path.join(cache_dir, filename)
+                try:
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                except Exception as e:
+                    print(f"Warning: Failed to remove cache file {filename}: {e}")
 
     def load_or_generate_key(self):
         """Load or generate an encryption key."""
@@ -102,19 +130,31 @@ class CacheManager:
         settings_path = os.path.join(self.get_cache_directory(), "settings.json")
         settings = {}
         if os.path.exists(settings_path):
-            with open(settings_path, "r") as f:
-                settings = json.load(f)
+            try:
+                with open(settings_path, "r") as f:
+                    settings = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                # If settings file is corrupted, start with empty settings
+                settings = {}
         settings[key] = value
-        with open(settings_path, "w") as f:
-            json.dump(settings, f)
+        try:
+            with open(settings_path, "w") as f:
+                json.dump(settings, f)
+        except IOError:
+            # If we can't write, silently fail
+            pass
 
     def load_setting(self, key, default=None):
         """Load a setting from the cache."""
         settings_path = os.path.join(self.get_cache_directory(), "settings.json")
         if not os.path.exists(settings_path):
             return default
-        with open(settings_path, "r") as f:
-            settings = json.load(f)
+        try:
+            with open(settings_path, "r") as f:
+                settings = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            # If settings file is corrupted, return default
+            return default
         return settings.get(key, default)
     
     def get_saved_sites(self):
