@@ -1271,29 +1271,24 @@ class MacOSGUIManager:
         try:
             result = self.api_client.test_connection(self.api_client.qbittorrent_url)
             if result:
-                self._show_notification(
-                    "Connection Successful",
-                    f"Successfully connected to qBittorrent at {self.api_client.qbittorrent_url}",
-                )
                 logger.info("qBittorrent connection test successful")
+                self._show_notification(
+                    "qBittorrent Connection", "Connection successful."
+                )
             else:
-                self.handle_error("Failed to connect to qBittorrent.")
                 logger.warning("qBittorrent connection test failed")
+                self.handle_error("Failed to connect to qBittorrent. Please check URL and credentials.")
         except Exception as e:
             error_msg = str(e)
             if "401" in error_msg or "credentials" in error_msg.lower():
-                self.handle_error(
-                    "Authentication failed.\n\nCheck your username and password in settings."
-                )
                 logger.warning("qBittorrent authentication failed: %s", e)
+                self.handle_error("Authentication failed. Check username and password.")
             elif "connection" in error_msg.lower():
-                self.handle_error(
-                    "Cannot reach qBittorrent.\n\nCheck the URL and network connection in settings."
-                )
                 logger.warning("qBittorrent connection error: %s", e)
+                self.handle_error("Cannot reach qBittorrent. Check URL and network.")
             else:
-                self.handle_error(f"Connection test failed:\n\n{error_msg}")
                 logger.exception("qBittorrent connection test error: %s", e)
+                self.handle_error(f"Connection test error: {error_msg}")
 
     def _settings_clear_credentials_(self, sender: Any) -> None:
         """Settings callback: Clear saved credentials.
@@ -1524,10 +1519,10 @@ class MacOSGUIManager:
         creds_status = (
             "✓ Saved" if self.cache_manager.credentials_exist() else "✗ Not saved"
         )
-        status_label = self._create_secondary_label(
-            f"Status: {creds_status}", (20, 0 + 22)
+        creds_label = self._create_secondary_label(
+            f"Credentials: {creds_status}", (20, 20)
         )
-        group2.addSubview_(status_label)
+        group2.addSubview_(creds_label)
 
         test_btn = NSButton.alloc().initWithFrame_(((200, 0 + 16), (130, 28)))
         test_btn.setTitle_("Test Connection")
@@ -1916,38 +1911,14 @@ class MacOSGUIManager:
             logger.exception("Error displaying error dialog: %s", e)
 
     def _show_notification(self, title: str, message: str) -> None:
-        """Show a system notification (macOS native).
+        """Show a notification using NSAlert (system notifications require special permissions).
 
         Args:
             title: Notification title.
             message: Notification message.
         """
-        if HAS_USER_NOTIFICATIONS:
-            try:
-                center = UNUserNotificationCenter.currentNotificationCenter()
-                content = UNMutableNotificationContent.alloc().init()
-                content.setTitle_(title)
-                content.setBody_(message)
-
-                identifier = f"MagnetLinker-{time.time()}"
-                request = UNNotificationRequest.requestWithIdentifier_content_trigger_(
-                    identifier, content, None
-                )
-
-                def completion_handler(error: Any) -> None:
-                    """Handle notification delivery result."""
-                    if error:
-                        logger.debug("Error delivering notification: %s", error)
-
-                center.addNotificationRequest_withCompletionHandler_(
-                    request, completion_handler
-                )
-                return
-            except Exception as e:
-                logger.warning("Error showing banner notification: %s", e)
-                # Fall back to alert on error
-
-        # Fallback to standard alert if UNUserNotificationCenter is not available
+        # Use NSAlert directly since system notifications require special permissions
+        # that this app doesn't have
         try:
             alert = NSAlert.alloc().init()
             if self._get_app_icon():
@@ -1957,8 +1928,8 @@ class MacOSGUIManager:
             alert.setAlertStyle_(NSAlertStyleInformational)
             alert.addButtonWithTitle_("OK")
             alert.runModal()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Error showing notification alert: %s", e)
 
     def run(self) -> None:
         """Start the rumps menu bar app."""
