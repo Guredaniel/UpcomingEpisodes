@@ -404,26 +404,55 @@ class MacOSGUIManager:
                 icon_path = str(potential_path)
                 break
 
-        # Create the app
+        # Create the app with common quitting behavior in the App menu
         self.app: rumps.App = rumps.App(
             "MagnetLinker",
             icon=icon_path,
             template=icon_path is None,  # Use template mode if no custom icon
+            quit_button=True,
         )
 
-        # Main menu items
+        # Main menu items with macOS-conventional keyboard shortcuts
         self.app.menu = [
-            rumps.MenuItem("Open qBittorrent", callback=self._menu_open_qbittorrent),
-            rumps.MenuItem("Send Magnet Link", callback=self._menu_magnet_input),
-            rumps.MenuItem("Send Torrent File", callback=self._menu_torrent_file),
+            rumps.MenuItem(
+                "Open qBittorrent",
+                callback=self._menu_open_qbittorrent,
+                key="o",
+            ),
+            rumps.MenuItem(
+                "Send Magnet Link",
+                callback=self._menu_magnet_input,
+                key="m",
+            ),
+            rumps.MenuItem(
+                "Send Torrent File",
+                callback=self._menu_torrent_file,
+                key="t",
+            ),
             None,  # Separator
             self._create_sites_submenu(),
             None,  # Separator
-            rumps.MenuItem("Clear Credentials", callback=self._menu_clear_credentials),
-            rumps.MenuItem("Reset Selection", callback=self._menu_reset_selection),
-            rumps.MenuItem("Preferences...", callback=self._menu_settings),
+            rumps.MenuItem(
+                "Clear Credentials",
+                callback=self._menu_clear_credentials,
+                key="c",
+            ),
+            rumps.MenuItem(
+                "Reset Selection",
+                callback=self._menu_reset_selection,
+                key="r",
+            ),
+            rumps.MenuItem(
+                "Preferences...",
+                callback=self._menu_settings,
+                key=",",
+            ),
             None,  # Separator
-            rumps.MenuItem("Toggle Clipboard Monitoring", callback=self._menu_toggle_clipboard),
+            rumps.MenuItem(
+                "Toggle Clipboard Monitoring",
+                callback=self._menu_toggle_clipboard,
+                key="b",
+            ),
             None,  # Separator
         ]
 

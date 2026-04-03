@@ -190,6 +190,15 @@ class TestSettingsValidation(unittest.TestCase):
         self.assertFalse(is_valid)
         print("✓ Invalid cache duration detection works")
 
+    def test_macos_menu_shortcuts(self):
+        """Test macOS menu items are registered with standard keyboard shortcuts."""
+        menu = self.gui.app.menu
+        self.assertEqual(menu["Preferences..."].key, ",")
+        self.assertEqual(menu["Open qBittorrent"].key, "o")
+        self.assertEqual(menu["Send Magnet Link"].key, "m")
+        self.assertEqual(menu["Toggle Clipboard Monitoring"].key, "b")
+        print("✓ macOS menu shortcuts are configured")
+
 
 class TestSettingsDialog(unittest.TestCase):
     """Test settings dialog functionality."""
