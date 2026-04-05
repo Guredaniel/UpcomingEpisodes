@@ -409,7 +409,8 @@ class MacOSGUIManager:
             "MagnetLinker",
             icon=icon_path,
             template=icon_path is None,  # Use template mode if no custom icon
-            quit_button=True,
+            # Use the default quit label rather than passing a boolean.
+            quit_button="Quit",
         )
 
         # Main menu items with macOS-conventional keyboard shortcuts
