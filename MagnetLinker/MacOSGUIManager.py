@@ -469,11 +469,6 @@ class MacOSGUIManager:
                 key="o",
             ),
             rumps.MenuItem(
-                "Send Magnet Link",
-                callback=self._menu_magnet_input,
-                key="m",
-            ),
-            rumps.MenuItem(
                 "Send Torrent File",
                 callback=self._menu_torrent_file,
                 key="t",
@@ -482,11 +477,6 @@ class MacOSGUIManager:
             self._create_sites_submenu(),
             self._create_server_submenu(),
             None,  # Separator
-            rumps.MenuItem(
-                "Clear Credentials",
-                callback=self._menu_clear_credentials,
-                key="c",
-            ),
             rumps.MenuItem(
                 "Reset Selection",
                 callback=self._menu_reset_selection,
