@@ -218,3 +218,26 @@ class CacheManager:
             sites: List of site dictionaries with 'name' and 'url' keys.
         """
         self.save_setting("saved_sites", sites)
+
+    def get_saved_server_sites(self) -> list[dict[str, str]]:
+        """Get the list of saved server shortcuts.
+        
+        Returns:
+            list: List of server dictionaries with 'name' and 'url' keys.
+        """
+        default_servers = [
+            {"name": "OpenMediaVault", "url": "http://192.168.1.152"},
+            {"name": "Prowlarr", "url": "http://192.168.1.152:9696"},
+            {"name": "Sonarr", "url": "http://192.168.1.152:8989"},
+            {"name": "Radarr", "url": "http://192.168.1.152:7878"},
+            {"name": "Bazarr", "url": "http://192.168.1.152:6767"},
+        ]
+        return self.load_setting("saved_server_sites", default_servers)
+
+    def save_server_sites(self, sites: list[dict[str, str]]) -> None:
+        """Save the list of server shortcuts.
+        
+        Args:
+            sites: List of server dictionaries with 'name' and 'url' keys.
+        """
+        self.save_setting("saved_server_sites", sites)

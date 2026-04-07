@@ -292,6 +292,19 @@ class TestCacheManagerSites(unittest.TestCase):
         self.assertEqual(loaded, [])
         print("✓ Save empty sites works")
 
+    def test_save_and_load_server_sites(self):
+        """Test saving and loading custom server shortcuts."""
+        custom_servers = [
+            {"name": "OpenMediaVault", "url": "http://192.168.1.152/"},
+            {"name": "Sonarr", "url": "http://192.168.1.152:8989"},
+        ]
+
+        self.cache_mgr.save_server_sites(custom_servers)
+        loaded = self.cache_mgr.get_saved_server_sites()
+
+        self.assertEqual(loaded, custom_servers)
+        print("✓ Save and load server sites works")
+
 
 class TestCacheManagerEdgeCases(unittest.TestCase):
     """Test edge cases and error conditions."""

@@ -171,6 +171,24 @@ class SettingsActionHandler(NSObject):
         if hasattr(self.manager, "_remove_site"):
             self.manager._remove_site(sender)
 
+    def addServerSiteClicked_(self, sender: Any) -> None:
+        """Handle add server button click.
+
+        Args:
+            sender: The button that was clicked.
+        """
+        if hasattr(self.manager, "_add_server_site"):
+            self.manager._add_server_site(sender)
+
+    def removeServerSiteClicked_(self, sender: Any) -> None:
+        """Handle remove server button click.
+
+        Args:
+            sender: The button that was clicked.
+        """
+        if hasattr(self.manager, "_remove_server_site"):
+            self.manager._remove_server_site(sender)
+
     def sidebarClicked_(self, sender: Any) -> None:
         """Handle sidebar item click.
 
@@ -203,6 +221,8 @@ class SettingsActionHandler(NSObject):
 
 class MacOSGUIManager:
     """macOS-native GUI manager using rumps menu bar and PyObjC Cocoa dialogs."""
+
+    NSFileHandlingPanelOKButton = NSFileHandlingPanelOKButton
 
     def __init__(self, cache_manager: CacheManager, api_client: APIClient) -> None:
         """Initialize the macOS GUI manager.
@@ -246,8 +266,12 @@ class MacOSGUIManager:
         )
 
         # Dynamic Sites
-        self.saved_sites: list[dict[str, str]] = self.cache_manager.get_saved_sites()
+        self.saved_sites: list[dict[str, str]] = self._load_saved_sites()
         self._working_sites: list[dict[str, str]] = list(self.saved_sites)
+
+        # Static local server shortcuts
+        self.server_sites: list[dict[str, str]] = self._load_saved_server_sites()
+        self._working_server_sites: list[dict[str, str]] = list(self.server_sites)
 
         # Clipboard monitoring
         self.last_magnet_url: str = ""
@@ -276,6 +300,30 @@ class MacOSGUIManager:
 
         # Request notification permissions
         self._setup_notifications()
+
+    def _load_saved_sites(self) -> list[dict[str, str]]:
+        """Load saved torrent sites from cache safely."""
+        try:
+            sites = self.cache_manager.get_saved_sites()
+            if isinstance(sites, list):
+                return sites
+            if isinstance(sites, tuple):
+                return list(sites)
+        except Exception:
+            pass
+        return []
+
+    def _load_saved_server_sites(self) -> list[dict[str, str]]:
+        """Load saved server shortcuts from cache safely."""
+        try:
+            sites = self.cache_manager.get_saved_server_sites()
+            if isinstance(sites, list):
+                return sites
+            if isinstance(sites, tuple):
+                return list(sites)
+        except Exception:
+            pass
+        return []
 
     def _setup_notifications(self) -> None:
         """Request permission to show macOS banner notifications."""
@@ -432,6 +480,7 @@ class MacOSGUIManager:
             ),
             None,  # Separator
             self._create_sites_submenu(),
+            self._create_server_submenu(),
             None,  # Separator
             rumps.MenuItem(
                 "Clear Credentials",
@@ -466,6 +515,38 @@ class MacOSGUIManager:
         sites_menu = rumps.MenuItem("Sites")
         self._populate_sites_menu(sites_menu)
         return sites_menu
+
+    def _create_server_submenu(self) -> rumps.MenuItem:
+        """Create the Server submenu with fixed local service shortcuts.
+
+        Returns:
+            rumps.MenuItem: The server submenu.
+        """
+        server_menu = rumps.MenuItem("Server")
+        self._populate_server_menu(server_menu)
+        return server_menu
+
+    def _populate_server_menu(self, menu_item: rumps.MenuItem) -> None:
+        """Populate the server submenu with fixed server shortcuts.
+
+        Args:
+            menu_item: The server menu item to populate.
+        """
+        try:
+            menu_item.clear()
+        except AttributeError:
+            pass
+
+        for site in self.server_sites:
+            name = site.get("name", "Unnamed Server")
+            url = site.get("url", "")
+            if name and url:
+                menu_item.add(
+                    rumps.MenuItem(
+                        name,
+                        callback=lambda sender, u=url: self._open_url(u),
+                    )
+                )
 
     def _populate_sites_menu(self, menu_item: rumps.MenuItem) -> None:
         """Rebuild the sites items in the menu dynamically.
@@ -958,6 +1039,7 @@ class MacOSGUIManager:
             ("Directories", "folder", 480),
             ("qBittorrent", "download", 440),
             ("Sites", "link", 400),
+            ("Server", "server", 360),
         ]
         
         self._sidebar_buttons = {}
@@ -1012,7 +1094,7 @@ class MacOSGUIManager:
         window.setContentView_(main_container)
         
         self._settings_window = window
-        self._sidebar_items = ["General", "Directories", "qBittorrent", "Sites"]
+        self._sidebar_items = ["General", "Directories", "qBittorrent", "Sites", "Server"]
         
         self._show_settings_section("General")
         
@@ -1166,6 +1248,8 @@ class MacOSGUIManager:
         # Save Sites tab state if we are leaving it
         if getattr(self, "_current_settings_section", None) == "Sites" and section_name != "Sites":
             self._save_working_sites_state()
+        elif getattr(self, "_current_settings_section", None) == "Server" and section_name != "Server":
+            self._save_working_server_sites_state()
 
         # Clear previous content
         for subview in self._content_view.subviews():
@@ -1184,6 +1268,8 @@ class MacOSGUIManager:
             self._create_qbittorrent_content()
         elif section_name == "Sites":
             self._create_sites_content()
+        elif section_name == "Server":
+            self._create_server_content()
 
         self._current_settings_section = section_name
 
@@ -1610,6 +1696,42 @@ class MacOSGUIManager:
         self._rebuild_sites_ui()
         self._content_view.addSubview_(container)
 
+    def _create_server_content(self) -> None:
+        """Create Server settings content using modern Card UI.
+
+        Returns:
+            None
+        """
+        container = NSView.alloc().initWithFrame_(((0, 0), (580, 550)))
+
+        title = self._create_section_title("Server", (40, 480))
+        container.addSubview_(title)
+
+        # Scrollable Group
+        group = self._create_settings_group(((40, 70), (500, 390)), container)
+
+        self._server_scroll_view = NSScrollView.alloc().initWithFrame_(((1, 1), (498, 388)))
+        self._server_scroll_view.setHasVerticalScroller_(True)
+        self._server_scroll_view.setDrawsBackground_(False)
+        self._server_scroll_view.setBorderType_(0)
+
+        self.server_document_view = NSView.alloc().initWithFrame_(((0, 0), (480, 388)))
+        self._server_scroll_view.setDocumentView_(self.server_document_view)
+        group.addSubview_(self._server_scroll_view)
+
+        add_btn = NSButton.alloc().initWithFrame_(((40, 20), (160, 28)))
+        add_btn.setTitle_("Add Server")
+        add_btn.setBezelStyle_(2)
+        add_btn.setTarget_(self._action_handler)
+        add_btn.setAction_("addServerSiteClicked:")
+        container.addSubview_(add_btn)
+
+        if not self._working_server_sites:
+            self._working_server_sites = [{"name": "", "url": ""}]
+
+        self._rebuild_server_ui()
+        self._content_view.addSubview_(container)
+
     def _rebuild_sites_ui(self) -> None:
         """Rebuild the text fields in the scroll view based on _working_sites.
 
@@ -1660,6 +1782,53 @@ class MacOSGUIManager:
 
         self.sites_document_view.scrollPoint_((0, total_height))
 
+    def _rebuild_server_ui(self) -> None:
+        """Rebuild the server text fields in the scroll view based on _working_server_sites.
+
+        Returns:
+            None
+        """
+        for v in list(self.server_document_view.subviews()):
+            v.removeFromSuperview()
+
+        row_height = 40
+        num_sites = len(self._working_server_sites)
+        total_height = max(388, num_sites * row_height + 20)
+
+        self.server_document_view.setFrameSize_((480, total_height))
+        self._server_rows = []
+
+        for i, site in enumerate(self._working_server_sites):
+            y = total_height - (i + 1) * row_height - 10
+
+            name_field = NSTextField.alloc().initWithFrame_(((20, y), (140, 24)))
+            name_field.setStringValue_(site.get("name", ""))
+            name_field.setPlaceholderString_("Server Name")
+            name_field.setBezelStyle_(1)
+            name_field.setEditable_(True)
+            name_field.setSelectable_(True)
+            self.server_document_view.addSubview_(name_field)
+
+            url_field = NSTextField.alloc().initWithFrame_(((170, y), (250, 24)))
+            url_field.setStringValue_(site.get("url", ""))
+            url_field.setPlaceholderString_("http://...")
+            url_field.setBezelStyle_(1)
+            url_field.setEditable_(True)
+            url_field.setSelectable_(True)
+            self.server_document_view.addSubview_(url_field)
+
+            rm_btn = NSButton.alloc().initWithFrame_(((430, y), (40, 24)))
+            rm_btn.setTitle_("-")
+            rm_btn.setBezelStyle_(2)
+            rm_btn.setTarget_(self._action_handler)
+            rm_btn.setAction_("removeServerSiteClicked:")
+            rm_btn.setTag_(i)
+            self.server_document_view.addSubview_(rm_btn)
+
+            self._server_rows.append({"name_field": name_field, "url_field": url_field})
+
+        self.server_document_view.scrollPoint_((0, total_height))
+
     def _add_site(self, sender: Any) -> None:
         """Action to add a blank site row.
 
@@ -1690,6 +1859,36 @@ class MacOSGUIManager:
             self._rebuild_sites_ui()
             logger.debug("Removed site row at index %d", idx)
 
+    def _add_server_site(self, sender: Any) -> None:
+        """Action to add a blank server row.
+
+        Args:
+            sender: The button that triggered the action.
+
+        Returns:
+            None
+        """
+        self._save_working_server_sites_state()
+        self._working_server_sites.append({"name": "", "url": ""})
+        self._rebuild_server_ui()
+        logger.debug("Added new server row")
+
+    def _remove_server_site(self, sender: Any) -> None:
+        """Action to remove a specific server row.
+
+        Args:
+            sender: The remove button that triggered the action.
+
+        Returns:
+            None
+        """
+        self._save_working_server_sites_state()
+        idx = sender.tag()
+        if 0 <= idx < len(self._working_server_sites):
+            self._working_server_sites.pop(idx)
+            self._rebuild_server_ui()
+            logger.debug("Removed server row at index %d", idx)
+
     def _save_working_sites_state(self) -> None:
         """Save text field values back into the memory list before destroying them.
 
@@ -1706,6 +1905,23 @@ class MacOSGUIManager:
                     }
                 )
             self._working_sites = new_working
+
+    def _save_working_server_sites_state(self) -> None:
+        """Save server text field values back into the memory list before destroying them.
+
+        Returns:
+            None
+        """
+        if hasattr(self, "_server_rows"):
+            new_working = []
+            for row in self._server_rows:
+                new_working.append(
+                    {
+                        "name": row["name_field"].stringValue(),
+                        "url": row["url_field"].stringValue(),
+                    }
+                )
+            self._working_server_sites = new_working
 
     def _close_settings_(self, sender: Any) -> None:
         """Close the settings window.
@@ -1838,6 +2054,27 @@ class MacOSGUIManager:
             # Dynamically update the sites menu items
             if "Sites" in self.app.menu:
                 self._populate_sites_menu(self.app.menu["Sites"])
+
+            # Save Server shortcuts
+            if self._current_settings_section == "Server":
+                self._save_working_server_sites_state()
+
+            valid_server_sites = []
+            for s in self._working_server_sites:
+                name = s.get("name", "").strip()
+                url = s.get("url", "").strip()
+                if name and url:
+                    if not (url.startswith("http://") or url.startswith("https://")):
+                        url = "http://" + url
+                    valid_server_sites.append({"name": name, "url": url})
+
+            self.server_sites = valid_server_sites
+            self.cache_manager.save_server_sites(valid_server_sites)
+            logger.debug("Saved %d server shortcuts", len(valid_server_sites))
+
+            # Dynamically update the server menu items
+            if "Server" in self.app.menu:
+                self._populate_server_menu(self.app.menu["Server"])
 
             # Save cache duration
             if "cache_duration" in self._settings_fields:
