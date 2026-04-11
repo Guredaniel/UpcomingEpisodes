@@ -80,6 +80,11 @@ class GUIManager:
             "site_nyaa_url", "https://nyaa.si"
         )
 
+        # Saved dynamic torrent sites from macOS port
+        self.saved_sites: list[dict[str, str]] = self.cache_manager.get_saved_sites()
+        self._working_sites: list[dict[str, str]] = list(self.saved_sites)
+        self._site_rows: list[dict[str, Any]] = []
+
         # Clipboard check interval (in seconds)
         self.clipboard_check_interval: float = self.cache_manager.load_setting(
             "clipboard_check_interval", 0.5
@@ -98,6 +103,7 @@ class GUIManager:
             "indefinite_selection", False
         )
         self.tray_thread: Optional[threading.Thread] = None
+        self.tray_icon: Optional[Icon] = None
         self.settings_window: Optional[CTkToplevel] = None
         self.mac_settings_win: Optional[tk.Toplevel] = None
         self.sites_frame: Optional[tk.Frame] = None
@@ -254,7 +260,7 @@ class GUIManager:
         ).pack(fill="x", pady=2)
 
     def setup_sites_tab(self) -> None:
-        """Create the Sites tab allowing toggle and URL editing for each site.
+        """Create the Sites tab allowing editing of saved torrent site entries.
 
         Returns:
             None
@@ -262,37 +268,39 @@ class GUIManager:
         assert self.settings_tabview is not None, "settings_tabview must be initialized"
         sites_tab = self.settings_tabview.tab("Sites")
 
-        # URL entries for each site
-        self.configure_ctk_label(sites_tab, "rutor URL:")
-        rutor_entry = CTkEntry(
-            sites_tab, width=40, fg_color="gray25", text_color="white"
-        )
-        rutor_entry.insert(0, self.site_rutor_url)
-        rutor_entry.pack(pady=(0, 2), padx=10, fill=tk.X)
-        rutor_entry.bind(
-            "<FocusOut>",
-            lambda e: self.save_site_setting("site_rutor_url", rutor_entry.get().strip()),
-        )
+        if not self._working_sites:
+            self._working_sites = [{"name": "", "url": ""}]
 
-        self.configure_ctk_label(sites_tab, "ext.to URL:")
-        ext_entry = CTkEntry(sites_tab, width=40, fg_color="gray25", text_color="white")
-        ext_entry.insert(0, self.site_ext_url)
-        ext_entry.pack(pady=(0, 2), padx=10, fill=tk.X)
-        ext_entry.bind(
-            "<FocusOut>",
-            lambda e: self.save_site_setting("site_ext_url", ext_entry.get().strip()),
-        )
+        header_frame = CTkFrame(sites_tab, fg_color="transparent")
+        header_frame.pack(fill="x", padx=10, pady=(10, 0))
 
-        self.configure_ctk_label(sites_tab, "nyaa.si URL:")
-        nyaa_entry = CTkEntry(
-            sites_tab, width=40, fg_color="gray25", text_color="white"
+        CTkLabel(
+            header_frame,
+            text="Name",
+            text_color="white",
+            width=18,
+            anchor="w",
+        ).pack(side="left", padx=(0, 5))
+        CTkLabel(
+            header_frame,
+            text="URL",
+            text_color="white",
+            width=40,
+            anchor="w",
+        ).pack(side="left", padx=(0, 5))
+
+        add_button = CTkButton(
+            sites_tab,
+            text="Add Site",
+            width=120,
+            command=self._add_site_row,
         )
-        nyaa_entry.insert(0, self.site_nyaa_url)
-        nyaa_entry.pack(pady=(0, 2), padx=10, fill=tk.X)
-        nyaa_entry.bind(
-            "<FocusOut>",
-            lambda e: self.save_site_setting("site_nyaa_url", nyaa_entry.get().strip()),
-        )
+        add_button.pack(anchor="w", padx=10, pady=(8, 10))
+
+        self._sites_tab_body = CTkFrame(sites_tab, fg_color="transparent")
+        self._sites_tab_body.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        self._rebuild_sites_tab()
 
     def save_site_setting(self, key: str, value: str) -> None:
         """Save a site URL to cache and update the button command/live URL.
@@ -324,7 +332,103 @@ class GUIManager:
                 )
         except Exception as e:
             logger.debug("Error updating site button: %s", e)
-        
+
+    def _save_sites_state(self) -> None:
+        """Persist the current Sites tab rows to cache and update the tray menu."""
+        valid_sites: list[dict[str, str]] = []
+        for site in self._working_sites:
+            name = site.get("name", "").strip()
+            url = site.get("url", "").strip()
+            if name and url:
+                if not url.startswith(("http://", "https://")):
+                    url = "https://" + url
+                valid_sites.append({"name": name, "url": url})
+
+        self.saved_sites = valid_sites
+        self.cache_manager.save_sites(valid_sites)
+        self._update_tray_menu()
+
+    def _save_sites_from_entries(self) -> None:
+        """Load values from the current site row widgets into working settings and persist them."""
+        self._working_sites = []
+        for row in self._site_rows:
+            name = row["name_entry"].get().strip()
+            url = row["url_entry"].get().strip()
+            if name or url:
+                self._working_sites.append({"name": name, "url": url})
+
+        if not self._working_sites:
+            self._working_sites = [{"name": "", "url": ""}]
+
+        self._save_sites_state()
+
+    def _rebuild_sites_tab(self) -> None:
+        """Rebuild the Sites tab rows based on the current working sites."""
+        for widget in self._sites_tab_body.winfo_children():
+            widget.destroy()
+
+        self._site_rows = []
+
+        for i, site in enumerate(self._working_sites):
+            row_frame = CTkFrame(self._sites_tab_body, fg_color="transparent")
+            row_frame.pack(fill="x", pady=4)
+
+            name_entry = CTkEntry(
+                row_frame,
+                width=18,
+                fg_color="gray25",
+                text_color="white",
+            )
+            name_entry.insert(0, site.get("name", ""))
+            name_entry.pack(side="left", padx=(0, 5), fill="x", expand=True)
+            name_entry.bind(
+                "<FocusOut>",
+                lambda event: self._save_sites_from_entries(),
+            )
+
+            url_entry = CTkEntry(
+                row_frame,
+                width=28,
+                fg_color="gray25",
+                text_color="white",
+            )
+            url_entry.insert(0, site.get("url", ""))
+            url_entry.pack(side="left", padx=(0, 5), fill="x", expand=True)
+            url_entry.bind(
+                "<FocusOut>",
+                lambda event: self._save_sites_from_entries(),
+            )
+
+            remove_button = CTkButton(
+                row_frame,
+                text="-",
+                width=24,
+                command=lambda index=i: self._remove_site_row(index),
+            )
+            remove_button.pack(side="right")
+
+            self._site_rows.append(
+                {
+                    "name_entry": name_entry,
+                    "url_entry": url_entry,
+                    "frame": row_frame,
+                }
+            )
+
+    def _add_site_row(self) -> None:
+        """Add a new empty site row to the Sites tab."""
+        self._save_sites_from_entries()
+        self._working_sites.append({"name": "", "url": ""})
+        self._rebuild_sites_tab()
+
+    def _remove_site_row(self, index: int) -> None:
+        """Remove a site row from the Sites tab."""
+        self._save_sites_from_entries()
+        if 0 <= index < len(self._working_sites):
+            self._working_sites.pop(index)
+        if not self._working_sites:
+            self._working_sites = [{"name": "", "url": ""}]
+        self._rebuild_sites_tab()
 
     def load_settings_window(self) -> None:
         """Build the settings window at startup and keep it hidden.
@@ -1259,6 +1363,24 @@ class GUIManager:
         Returns:
             Menu: The tray menu.
         """
+        sites_menu_items = []
+        for site in self.saved_sites:
+            name = site.get("name", "")
+            url = site.get("url", "")
+            if name and url:
+                sites_menu_items.append(
+                    MenuItem(name, lambda icon, item, url=url: webbrowser.open(url))
+                )
+
+        if not sites_menu_items:
+            sites_menu_items.append(
+                MenuItem(
+                    "No saved sites",
+                    lambda icon, item: None,
+                    enabled=False,
+                )
+            )
+
         return Menu(
             MenuItem(
                 "Open qBittorrent",
@@ -1270,18 +1392,7 @@ class GUIManager:
             ),
             MenuItem(
                 "Sites",
-                Menu(
-                    MenuItem(
-                        "rutor.info",
-                        lambda icon, item: webbrowser.open(self.site_rutor_url),
-                    ),
-                    MenuItem(
-                        "ext.to", lambda icon, item: webbrowser.open(self.site_ext_url)
-                    ),
-                    MenuItem(
-                        "nyaa.si", lambda icon, item: webbrowser.open(self.site_nyaa_url)
-                    ),
-                ),
+                Menu(*sites_menu_items),
             ),
             MenuItem(
                 "Reset selection", lambda icon, item: self.reset_selection()
@@ -1290,6 +1401,17 @@ class GUIManager:
             Menu.SEPARATOR,
             MenuItem("Exit", lambda icon, item: self.on_exit(icon, item)),
         )
+
+    def _update_tray_menu(self) -> None:
+        """Refresh the tray menu to reflect changed site settings."""
+        if self.tray_icon is None:
+            return
+        try:
+            self.tray_icon.menu = self.create_tray_menu()
+            if hasattr(self.tray_icon, "update_menu"):
+                self.tray_icon.update_menu()
+        except Exception as e:
+            logger.debug("Unable to refresh tray menu: %s", e)
 
     def run_tray(self) -> None:
         """Run the system tray icon loop.
@@ -1304,6 +1426,7 @@ class GUIManager:
                 "MagnetLinker",
                 menu=self.create_tray_menu(),
             )
+            self.tray_icon = icon
             logger.info("System tray icon started")
             icon.run()
         except Exception as e:

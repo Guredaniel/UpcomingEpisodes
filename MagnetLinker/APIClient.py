@@ -32,6 +32,13 @@ class APIClient:
             "movies_directory", "/media/elements/Movies"
         )
 
+    def _qbittorrent_api_url(self, endpoint: str) -> str:
+        """Construct a qBittorrent API URL from the configured base URL."""
+        base_url = self.qbittorrent_url.strip()
+        if not base_url.endswith("/"):
+            base_url += "/"
+        return f"{base_url}{endpoint.lstrip('/')}"
+
     def open_qbittorrent_with_magnet(self, magnet_url: str, is_series: bool = False) -> None:
         """Send the magnet URL to qBittorrent with authentication and optional save path.
         
@@ -49,10 +56,10 @@ class APIClient:
                 msg = "qBittorrent credentials not found in cache."
                 raise ValueError(msg)
             
-            qbittorrent_url = f"{self.qbittorrent_url}api/v2/torrents/add"
+            qbittorrent_url = self._qbittorrent_api_url("api/v2/torrents/add")
             
             # Login to qBittorrent
-            login_url = f"{self.qbittorrent_url}api/v2/auth/login"
+            login_url = self._qbittorrent_api_url("api/v2/auth/login")
             login_data = {"username": username, "password": password}
             session = requests.Session()
             login_response = session.post(login_url, data=login_data, timeout=10)
@@ -98,10 +105,10 @@ class APIClient:
                 msg = "qBittorrent credentials not found in cache."
                 raise ValueError(msg)
             
-            add_torrent_url = f"{self.qbittorrent_url}api/v2/torrents/add"
+            add_torrent_url = self._qbittorrent_api_url("api/v2/torrents/add")
             
             # Login to qBittorrent
-            login_url = f"{self.qbittorrent_url}api/v2/auth/login"
+            login_url = self._qbittorrent_api_url("api/v2/auth/login")
             login_data = {"username": username, "password": password}
             session = requests.Session()
             login_response = session.post(login_url, data=login_data, timeout=10)

@@ -156,6 +156,35 @@ class TestAPIClientMagnetLink(unittest.TestCase):
         self.assertIn("credentials", str(context.exception).lower())
         print("✓ Magnet no credentials handling works")
 
+    @patch('APIClient.requests.Session')
+    def test_open_magnet_with_url_missing_trailing_slash(self, mock_session_class):
+        """Test qBittorrent URL missing trailing slash is normalized."""
+        self.mock_cache.load_setting.side_effect = lambda key, default: {
+            "qbittorrent_url": "http://localhost:8080",
+            "series_directory": "/Series",
+            "movies_directory": "/Movies",
+        }.get(key, default)
+        self.mock_cache.load_credentials.return_value = ("testuser", "testpass")
+        self.client = APIClient(self.mock_cache)
+
+        mock_session = Mock()
+        mock_session_class.return_value = mock_session
+        mock_login_resp = Mock()
+        mock_login_resp.status_code = 200
+        mock_add_resp = Mock()
+        mock_add_resp.status_code = 200
+        mock_session.post.side_effect = [mock_login_resp, mock_add_resp]
+
+        magnet_url = "magnet:?xt=urn:btih:test123"
+        self.client.open_qbittorrent_with_magnet(magnet_url, is_series=False)
+
+        self.assertEqual(mock_session.post.call_count, 2)
+        first_call_url = mock_session.post.call_args_list[0].args[0]
+        self.assertEqual(first_call_url, "http://localhost:8080/api/v2/auth/login")
+        second_call_url = mock_session.post.call_args_list[1].args[0]
+        self.assertEqual(second_call_url, "http://localhost:8080/api/v2/torrents/add")
+        print("✓ Magnet URL missing trailing slash normalization works")
+
 
 class TestAPIClientTorrentFile(unittest.TestCase):
     """Test torrent file handling."""
