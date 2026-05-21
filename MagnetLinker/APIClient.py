@@ -23,21 +23,32 @@ class APIClient:
         """
         self.cache_manager = cache_manager
         self.qbittorrent_url = self.cache_manager.load_setting(
-            "qbittorrent_url", "http://192.168.1.111:8080/"
+            "qbittorrent_url", "http://192.168.1.152:8080/"
         )
         self.series_directory = self.cache_manager.load_setting(
-            "series_directory", "/media/elements/Series"
+            "series_directory", "/tv"
         )
         self.movies_directory = self.cache_manager.load_setting(
-            "movies_directory", "/media/elements/Movies"
+            "movies_directory", "/movies"
         )
 
-    def _qbittorrent_api_url(self, endpoint: str) -> str:
-        """Construct a qBittorrent API URL from the configured base URL."""
-        base_url = self.qbittorrent_url.strip()
+    def _qbittorrent_api_url(self, endpoint: str, base_url: str | None = None) -> str:
+        """Construct a qBittorrent API URL from the configured base URL.
+
+        Args:
+            endpoint: The API endpoint to append.
+            base_url: Optional base URL to use instead of the configured one.
+        """
+        if base_url is None:
+            base_url = self.qbittorrent_url
+        base_url = base_url.strip()
         if not base_url.endswith("/"):
             base_url += "/"
         return f"{base_url}{endpoint.lstrip('/')}"
+
+    def _is_success_response(self, response: requests.Response) -> bool:
+        """Return True for successful API responses (2xx status codes)."""
+        return 200 <= response.status_code < 300
 
     def open_qbittorrent_with_magnet(self, magnet_url: str, is_series: bool = False) -> None:
         """Send the magnet URL to qBittorrent with authentication and optional save path.
@@ -64,8 +75,12 @@ class APIClient:
             session = requests.Session()
             login_response = session.post(login_url, data=login_data, timeout=10)
             
-            if login_response.status_code != 200:
-                msg = f"Failed to login to qBittorrent: {login_response.text}"
+            if not self._is_success_response(login_response):
+                body = login_response.text.strip() or "<no response body>"
+                msg = (
+                    f"Failed to login to qBittorrent: "
+                    f"{login_response.status_code} {login_response.reason}: {body}"
+                )
                 raise requests.RequestException(msg)
             
             # Determine save path
@@ -79,8 +94,12 @@ class APIClient:
             # Send the magnet URL to qBittorrent
             response = session.post(qbittorrent_url, data=data, timeout=10)
             
-            if response.status_code != 200:
-                msg = f"Failed to add torrent: {response.text}"
+            if not self._is_success_response(response):
+                body = response.text.strip() or "<no response body>"
+                msg = (
+                    f"Failed to add torrent: "
+                    f"{response.status_code} {response.reason}: {body}"
+                )
                 raise requests.RequestException(msg)
         except (requests.RequestException, ValueError) as e:
             logger.exception("Failed to open qBittorrent")
@@ -113,8 +132,12 @@ class APIClient:
             session = requests.Session()
             login_response = session.post(login_url, data=login_data, timeout=10)
             
-            if login_response.status_code != 200:
-                msg = f"Failed to login to qBittorrent: {login_response.text}"
+            if not self._is_success_response(login_response):
+                body = login_response.text.strip() or "<no response body>"
+                msg = (
+                    f"Failed to login to qBittorrent: "
+                    f"{login_response.status_code} {login_response.reason}: {body}"
+                )
                 raise requests.RequestException(msg)
             
             # Determine save path
@@ -130,8 +153,12 @@ class APIClient:
                 files = {"torrents": torrent_file}
                 response = session.post(add_torrent_url, data=data, files=files, timeout=20)
             
-            if response.status_code != 200:
-                msg = f"Failed to add torrent: {response.text}"
+            if not self._is_success_response(response):
+                body = response.text.strip() or "<no response body>"
+                msg = (
+                    f"Failed to add torrent: "
+                    f"{response.status_code} {response.reason}: {body}"
+                )
                 raise requests.RequestException(msg)
         except (requests.RequestException, ValueError, OSError) as e:
             logger.exception("Failed to open qBittorrent with torrent file")
@@ -178,19 +205,19 @@ class APIClient:
         try:
             # If credentials provided, test with those
             if username and password:
-                login_url = f"{url}api/v2/auth/login"
+                login_url = self._qbittorrent_api_url("api/v2/auth/login", base_url=url)
                 login_data = {"username": username, "password": password}
                 session = requests.Session()
                 login_response = session.post(login_url, data=login_data, timeout=10)
                 
-                if login_response.status_code == 200:
+                if self._is_success_response(login_response):
                     return True
                 msg = f"Authentication failed: {login_response.status_code}"
                 raise requests.RequestException(msg)
             
             # Test basic connection
             response = requests.get(url, timeout=5)
-            if response.status_code == 200:
+            if self._is_success_response(response):
                 return True
             msg = f"Connection failed: {response.status_code}"
             raise requests.RequestException(msg)

@@ -141,6 +141,28 @@ class TestAPIClientMagnetLink(unittest.TestCase):
         
         self.assertIn("login", str(context.exception).lower())
         print("✓ Magnet failed login handling works")
+
+    @patch('APIClient.requests.Session')
+    def test_magnet_204_login_success(self, mock_session_class):
+        """Test magnet login success with 204 response code."""
+        mock_session = Mock()
+        mock_session_class.return_value = mock_session
+
+        mock_login_resp = Mock()
+        mock_login_resp.status_code = 204
+        mock_login_resp.reason = "OK"
+        mock_login_resp.text = ""
+
+        mock_add_resp = Mock()
+        mock_add_resp.status_code = 200
+
+        mock_session.post.side_effect = [mock_login_resp, mock_add_resp]
+
+        magnet_url = "magnet:?xt=urn:btih:test123"
+        self.client.open_qbittorrent_with_magnet(magnet_url, is_series=False)
+
+        self.assertEqual(mock_session.post.call_count, 2)
+        print("✓ Magnet 204 login success works")
     
     @patch('APIClient.requests.Session')
     def test_magnet_no_credentials(self, mock_session_class):
@@ -244,6 +266,27 @@ class TestAPIClientTorrentFile(unittest.TestCase):
         # Verify calls
         self.assertEqual(mock_session.post.call_count, 2)
         print("✓ Open torrent series works")
+    
+    @patch('builtins.open', new_callable=mock_open, read_data=b"torrent data")
+    @patch('APIClient.requests.Session')
+    def test_torrent_204_login_success(self, mock_session_class, mock_file):
+        """Test torrent file login success with 204 response code."""
+        mock_session = Mock()
+        mock_session_class.return_value = mock_session
+
+        mock_login_resp = Mock()
+        mock_login_resp.status_code = 204
+        mock_login_resp.reason = "OK"
+        mock_login_resp.text = ""
+
+        mock_add_resp = Mock()
+        mock_add_resp.status_code = 200
+
+        mock_session.post.side_effect = [mock_login_resp, mock_add_resp]
+
+        self.client.open_qbittorrent_with_torrent_file("/path/to/file.torrent", is_series=False)
+        self.assertEqual(mock_session.post.call_count, 2)
+        print("✓ Torrent file 204 login success works")
     
     @patch('APIClient.requests.Session')
     def test_torrent_failed_login(self, mock_session_class):
