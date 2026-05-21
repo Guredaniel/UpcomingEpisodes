@@ -417,6 +417,48 @@ class TestAPIClientNetworkErrors(unittest.TestCase):
         
         print("✓ HTTP error response handling works")
 
+    @patch('APIClient.requests.get')
+    def test_check_connection_no_credentials_success(self, mock_get):
+        """Test connection health check without saved credentials."""
+        self.mock_cache.load_credentials.return_value = (None, None)
+        self.client = APIClient(self.mock_cache)
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = "<html>qBittorrent</html>"
+        mock_get.return_value = mock_response
+
+        success, message = self.client.check_qbittorrent_connection()
+
+        self.assertTrue(success)
+        self.assertEqual(message, "Connection successful")
+        print("✓ Connection health check without credentials works")
+
+    @patch('APIClient.requests.Session')
+    def test_check_connection_with_credentials_success(self, mock_session_class):
+        """Test connection health check with saved credentials."""
+        mock_session = Mock()
+        mock_session_class.return_value = mock_session
+
+        mock_login_resp = Mock()
+        mock_login_resp.status_code = 204
+        mock_login_resp.reason = "OK"
+        mock_login_resp.text = ""
+
+        mock_version_resp = Mock()
+        mock_version_resp.status_code = 200
+        mock_version_resp.reason = "OK"
+        mock_version_resp.text = "4.5.0"
+
+        mock_session.post.return_value = mock_login_resp
+        mock_session.get.return_value = mock_version_resp
+
+        success, message = self.client.check_qbittorrent_connection()
+
+        self.assertTrue(success)
+        self.assertEqual(message, "Connection successful")
+        print("✓ Connection health check with credentials works")
+
 
 class TestAPIClientPathHandling(unittest.TestCase):
     """Test path handling and directory management."""

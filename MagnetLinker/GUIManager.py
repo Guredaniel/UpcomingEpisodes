@@ -102,6 +102,9 @@ class GUIManager:
         self.indefinite_selection: bool = self.cache_manager.load_setting(
             "indefinite_selection", False
         )
+        self.use_alternative_default: bool = self.cache_manager.load_setting(
+            "use_alternative_default", False
+        )
         self.tray_thread: Optional[threading.Thread] = None
         self.tray_icon: Optional[Icon] = None
         self.settings_window: Optional[CTkToplevel] = None
@@ -544,6 +547,20 @@ class GUIManager:
             ),
         )
 
+        # Alternative Series Directory entry
+        self.configure_ctk_label(directories_tab, "Alternative series directory:", pady=(10, 0))
+        alt_series_directory_entry = CTkEntry(
+            directories_tab, width=40, fg_color="gray25", text_color="white"
+        )
+        alt_series_directory_entry.insert(0, self.api_client.alt_series_directory)
+        alt_series_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
+        alt_series_directory_entry.bind(
+            "<KeyRelease>",
+            lambda event: self.save_information(
+                alt_series_directory_entry.get().strip(), "alt_series_directory"
+            ),
+        )
+
         # Movies Directory entry
         self.configure_ctk_label(directories_tab, "Movies directory:", pady=(10, 0))
         movies_directory_entry = CTkEntry(
@@ -555,6 +572,20 @@ class GUIManager:
             "<KeyRelease>",
             lambda event: self.save_information(
                 movies_directory_entry.get().strip(), "movies_directory"
+            ),
+        )
+
+        # Alternative Movies Directory entry
+        self.configure_ctk_label(directories_tab, "Alternative movies directory:", pady=(10, 0))
+        alt_movies_directory_entry = CTkEntry(
+            directories_tab, width=40, fg_color="gray25", text_color="white"
+        )
+        alt_movies_directory_entry.insert(0, self.api_client.alt_movies_directory)
+        alt_movies_directory_entry.pack(pady=(0, 10), padx=10, fill=tk.X)
+        alt_movies_directory_entry.bind(
+            "<KeyRelease>",
+            lambda event: self.save_information(
+                alt_movies_directory_entry.get().strip(), "alt_movies_directory"
             ),
         )
 
@@ -603,6 +634,20 @@ class GUIManager:
                 command=lambda: self.update_setting("add_to_startup", startup_var.get()),
             )
             startup_check.pack(anchor="w", padx=10, pady=10)
+
+        use_alt_default_var = tk.BooleanVar(value=self.use_alternative_default)
+        use_alt_default_check = CTkCheckBox(
+            general_tab,
+            text="Use alternative directories by default",
+            variable=use_alt_default_var,
+            onvalue=True,
+            offvalue=False,
+            text_color="white",
+            command=lambda: self.update_setting(
+                "use_alternative_default", use_alt_default_var.get()
+            ),
+        )
+        use_alt_default_check.pack(anchor="w", padx=10, pady=10)
 
         # Cache selection duration (minutes) setting.
         duration_label = CTkLabel(
@@ -729,7 +774,13 @@ class GUIManager:
         Returns:
             None
         """
-        valid_settings = {"series_directory", "movies_directory", "qbittorrent_url"}
+        valid_settings = {
+            "series_directory",
+            "alt_series_directory",
+            "movies_directory",
+            "alt_movies_directory",
+            "qbittorrent_url",
+        }
 
         if setting_name not in valid_settings:
             raise ValueError(f"Unknown setting name: {setting_name}")
@@ -960,7 +1011,11 @@ class GUIManager:
                 cached_option, cached_time = self.cached_selection
                 if self.indefinite_selection:
                     is_series = (cached_option == "Series")
-                    self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
+                    self.api_client.open_qbittorrent_with_magnet(
+                        magnet_url,
+                        is_series,
+                        use_alternative=self.use_alternative_default,
+                    )
                     if root_was_withdrawn:
                         self.root.withdraw()
                     return
@@ -968,7 +1023,11 @@ class GUIManager:
                     expiration_time = cached_time + timedelta(minutes=self.cache_duration_minutes)
                     if datetime.now() < expiration_time:
                         is_series = (cached_option == "Series")
-                        self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
+                        self.api_client.open_qbittorrent_with_magnet(
+                            magnet_url,
+                            is_series,
+                            use_alternative=self.use_alternative_default,
+                        )
                         if root_was_withdrawn:
                             self.root.withdraw()
                         return
@@ -988,8 +1047,11 @@ class GUIManager:
                         self.indefinite_selection = False
                     self.cache_manager.save_setting("indefinite_selection", self.indefinite_selection)
                     is_series = (option == "Series")
+                    use_alternative = use_alt_var.get()
                     try:
-                        self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
+                        self.api_client.open_qbittorrent_with_magnet(
+                            magnet_url, is_series, use_alternative=use_alternative
+                        )
                     except Exception as e:
                         error_str = str(e)
                         if (
@@ -1017,9 +1079,9 @@ class GUIManager:
             prompt_win.title("MagnetLinker - Content Type")
             prompt_win.attributes("-topmost", True)
             if self.prompt_win_geometry:
-                prompt_win.geometry(f"320x180{self.prompt_win_geometry}")
+                prompt_win.geometry(f"320x220{self.prompt_win_geometry}")
             else:
-                prompt_win.geometry("320x180")
+                prompt_win.geometry("320x220")
             prompt_win.resizable(False, False)
             prompt_win.configure(fg_color="black")
             prompt_win.lift()
@@ -1066,6 +1128,17 @@ class GUIManager:
                 font=dialog_font
             )
             indefinite_checkbox.pack(anchor="w", pady=2)
+
+            use_alt_var = tk.BooleanVar(value=self.use_alternative_default)
+            alt_checkbox = CTkCheckBox(
+                checkbox_frame,
+                text="Use alternative directory",
+                variable=use_alt_var,
+                text_color="white",
+                font=dialog_font,
+            )
+            alt_checkbox.pack(anchor="w", pady=2)
+
             button_frame = CTkFrame(prompt_win, fg_color="black")
             button_frame.pack(pady=10)
             movie_button = CTkButton(

@@ -28,8 +28,14 @@ class APIClient:
         self.series_directory = self.cache_manager.load_setting(
             "series_directory", "/tv"
         )
+        self.alt_series_directory = self.cache_manager.load_setting(
+            "alt_series_directory", ""
+        )
         self.movies_directory = self.cache_manager.load_setting(
             "movies_directory", "/movies"
+        )
+        self.alt_movies_directory = self.cache_manager.load_setting(
+            "alt_movies_directory", ""
         )
 
     def _qbittorrent_api_url(self, endpoint: str, base_url: str | None = None) -> str:
@@ -50,12 +56,23 @@ class APIClient:
         """Return True for successful API responses (2xx status codes)."""
         return 200 <= response.status_code < 300
 
-    def open_qbittorrent_with_magnet(self, magnet_url: str, is_series: bool = False) -> None:
+    def _format_response_error(self, response: requests.Response, action: str) -> str:
+        """Format an HTTP response error message for logging and display."""
+        body = response.text.strip() or "<no response body>"
+        return f"{action}: {response.status_code} {response.reason}: {body}"
+
+    def open_qbittorrent_with_magnet(
+        self,
+        magnet_url: str,
+        is_series: bool = False,
+        use_alternative: bool = False,
+    ) -> None:
         """Send the magnet URL to qBittorrent with authentication and optional save path.
         
         Args:
             magnet_url: The magnet link URL to send.
             is_series: If True, save to series directory; otherwise save to movies directory.
+            use_alternative: If True, save to the alternative directory for the selected type.
             
         Raises:
             Exception: If login fails or torrent cannot be added.
@@ -84,7 +101,18 @@ class APIClient:
                 raise requests.RequestException(msg)
             
             # Determine save path
-            save_path = self.series_directory if is_series else self.movies_directory
+            if is_series:
+                save_path = (
+                    self.alt_series_directory
+                    if use_alternative and self.alt_series_directory
+                    else self.series_directory
+                )
+            else:
+                save_path = (
+                    self.alt_movies_directory
+                    if use_alternative and self.alt_movies_directory
+                    else self.movies_directory
+                )
             
             # Prepare data payload
             data = {"urls": magnet_url}
@@ -106,13 +134,17 @@ class APIClient:
             raise Exception(f"Failed to open qBittorrent: {e}") from e
         
     def open_qbittorrent_with_torrent_file(
-        self, torrent_file_path: str, is_series: bool = False
+        self,
+        torrent_file_path: str,
+        is_series: bool = False,
+        use_alternative: bool = False,
     ) -> None:
         """Send a torrent file to qBittorrent with authentication and optional save path.
         
         Args:
             torrent_file_path: The path to the torrent file.
             is_series: If True, save to series directory; otherwise save to movies directory.
+            use_alternative: If True, save to the alternative directory for the selected type.
             
         Raises:
             Exception: If login fails or torrent cannot be added.
@@ -141,7 +173,18 @@ class APIClient:
                 raise requests.RequestException(msg)
             
             # Determine save path
-            save_path = self.series_directory if is_series else self.movies_directory
+            if is_series:
+                save_path = (
+                    self.alt_series_directory
+                    if use_alternative and self.alt_series_directory
+                    else self.series_directory
+                )
+            else:
+                save_path = (
+                    self.alt_movies_directory
+                    if use_alternative and self.alt_movies_directory
+                    else self.movies_directory
+                )
             
             # Prepare data payload
             data = {}
@@ -174,11 +217,26 @@ class APIClient:
 
     def check_qbittorrent_connection(self) -> tuple[bool, str]:
         """Check the connection to the qBittorrent web interface.
-        
+
         Returns:
             tuple: (success: bool, message: str)
         """
         try:
+            username, password = self.cache_manager.load_credentials()
+            if username and password:
+                session = requests.Session()
+                login_url = self._qbittorrent_api_url("api/v2/auth/login")
+                login_data = {"username": username, "password": password}
+                login_response = session.post(login_url, data=login_data, timeout=10)
+                if not self._is_success_response(login_response):
+                    return False, self._format_response_error(login_response, "Login failed")
+
+                version_url = self._qbittorrent_api_url("api/v2/app/version")
+                response = session.get(version_url, timeout=10)
+                if self._is_success_response(response):
+                    return True, "Connection successful"
+                return False, self._format_response_error(response, "API version check failed")
+
             response = requests.get(self.qbittorrent_url, timeout=5)
             if response.status_code == 200 and "qBittorrent" in response.text:
                 return True, "Connection successful"

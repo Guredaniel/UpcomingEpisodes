@@ -244,6 +244,9 @@ class MacOSGUIManager:
         self.indefinite_selection: bool = self.cache_manager.load_setting(
             "indefinite_selection", False
         )
+        self.use_alternative_default: bool = self.cache_manager.load_setting(
+            "use_alternative_default", False
+        )
         self.auto_launch_enabled: bool = self.cache_manager.load_setting(
             "auto_launch_enabled", False
         )
@@ -740,27 +743,34 @@ class MacOSGUIManager:
 
             # Check for cached selection
             if self.cached_selection is not None:
-                cached_option, cached_time = self.cached_selection
-                if self.indefinite_selection:
-                    is_series = cached_option == "Series"
-                    self._send_magnet(magnet_url, is_series)
-                    return
-                elif cached_time is not None:
-                    expiration_time = cached_time + timedelta(
-                        minutes=self.cache_duration_minutes
-                    )
-                    if datetime.now() < expiration_time:
+                    cached_option, cached_time = self.cached_selection
+                    if self.indefinite_selection:
                         is_series = cached_option == "Series"
-                        self._send_magnet(magnet_url, is_series)
+                        self._send_magnet(
+                            magnet_url,
+                            is_series,
+                            use_alternative=self.use_alternative_default,
+                        )
                         return
-                    else:
-                        self.cached_selection = None
+                    elif cached_time is not None:
+                        expiration_time = cached_time + timedelta(
+                            minutes=self.cache_duration_minutes
+                        )
+                        if datetime.now() < expiration_time:
+                            is_series = cached_option == "Series"
+                            self._send_magnet(
+                                magnet_url,
+                                is_series,
+                                use_alternative=self.use_alternative_default,
+                            )
+                            return
+                        else:
+                            self.cached_selection = None
 
             # Show content type dialog with remember option
             alert = NSAlert.alloc().init()
             if self._get_app_icon():
                 alert.setIcon_(self._get_app_icon())
-            alert.setMessageText_("Content Type")
             message = "A magnet link was detected in the clipboard.\n" if from_clipboard else ""
             alert.setInformativeText_(message + "Is this a movie or a series?")
             alert.setAlertStyle_(NSAlertStyleInformational)
@@ -771,11 +781,20 @@ class MacOSGUIManager:
             alert.addButtonWithTitle_("Series")
 
             # Add checkbox for remember selection
-            remember_checkbox = NSButton.alloc().initWithFrame_(((0, 0), (300, 18)))
+            accessory_view = NSView.alloc().initWithFrame_(((0, 0), (300, 42)))
+            remember_checkbox = NSButton.alloc().initWithFrame_(((0, 18), (300, 18)))
             remember_checkbox.setButtonType_(3)  # NSSwitchButton
             remember_checkbox.setTitle_("Remember this selection")
             remember_checkbox.setState_(0)
-            alert.setAccessoryView_(remember_checkbox)
+            accessory_view.addSubview_(remember_checkbox)
+
+            alt_checkbox = NSButton.alloc().initWithFrame_(((0, 0), (300, 18)))
+            alt_checkbox.setButtonType_(3)  # NSSwitchButton
+            alt_checkbox.setTitle_("Use alternative directory")
+            alt_checkbox.setState_(1 if self.use_alternative_default else 0)
+            accessory_view.addSubview_(alt_checkbox)
+
+            alert.setAccessoryView_(accessory_view)
 
             response = alert.runModal()
 
@@ -821,20 +840,24 @@ class MacOSGUIManager:
                 self.indefinite_selection = False
 
             is_series = selection == "Series"
-            self._send_magnet(magnet_url, is_series)
+            use_alternative = alt_checkbox.state() == 1
+            self._send_magnet(magnet_url, is_series, use_alternative)
 
         except Exception as e:
             self.handle_error(f"Error processing magnet link: {e}")
 
-    def _send_magnet(self, magnet_url: str, is_series: bool) -> None:
+    def _send_magnet(self, magnet_url: str, is_series: bool, use_alternative: bool = False) -> None:
         """Send magnet link to qBittorrent.
 
         Args:
-            magnet_url: The magnet link URL.
+                        self._send_magnet(magnet_url, is_series, use_alternative)
             is_series: Whether this is a series (True) or movie (False).
+            use_alternative: Whether to use the alternative directory.
         """
         try:
-            self.api_client.open_qbittorrent_with_magnet(magnet_url, is_series)
+            self.api_client.open_qbittorrent_with_magnet(
+                magnet_url, is_series, use_alternative=use_alternative
+            )
             # Silently add without showing notification
         except Exception as e:
             error_msg = str(e)
@@ -1396,6 +1419,29 @@ class MacOSGUIManager:
                 logger.exception("qBittorrent connection test error: %s", e)
                 self.handle_error(f"Connection test error: {error_msg}")
 
+    def _validate_qbittorrent_settings(self) -> bool:
+        """Validate current qBittorrent settings after saving.
+
+        Returns:
+            bool: True when validation succeeded, False otherwise.
+        """
+        try:
+            success, message = self.api_client.check_qbittorrent_connection()
+            if success:
+                self._show_notification(
+                    "qBittorrent Validation", "qBittorrent settings are valid."
+                )
+                logger.info("qBittorrent settings validated successfully")
+                return True
+
+            logger.warning("qBittorrent validation failed: %s", message)
+            self.handle_error(f"qBittorrent validation failed: {message}")
+            return False
+        except Exception as e:
+            logger.exception("qBittorrent validation error: %s", e)
+            self.handle_error(f"qBittorrent validation failed: {e}")
+            return False
+
     def _settings_clear_credentials_(self, sender: Any) -> None:
         """Settings callback: Clear saved credentials.
 
@@ -1440,8 +1486,8 @@ class MacOSGUIManager:
         title = self._create_section_title("General", (40, 480))
         container.addSubview_(title)
 
-        # Group 1: Auto Launch
-        group1 = self._create_settings_group(((40, 400), (500, 60)), container)
+        # Group 1: Auto Launch and Alternative Directory Default
+        group1 = self._create_settings_group(((40, 380), (500, 100)), container)
 
         autolaunch_label = self._create_modern_label("Auto-Launch on Login", (20, 20))
         group1.addSubview_(autolaunch_label)
@@ -1456,6 +1502,23 @@ class MacOSGUIManager:
             autolaunch_switch.setState_(1 if self.auto_launch_enabled else 0)
         group1.addSubview_(autolaunch_switch)
         self._settings_fields["auto_launch"] = autolaunch_switch
+
+        # Use alternative directories by default setting
+        alt_default_label = self._create_modern_label(
+            "Use alternative directories by default", (20, 60)
+        )
+        group1.addSubview_(alt_default_label)
+
+        if HAS_NSSWITCH:
+            alt_default_switch = NSSwitch.alloc().initWithFrame_(((430, 58), (50, 24)))
+            alt_default_switch.setState_(1 if self.use_alternative_default else 0)
+        else:
+            alt_default_switch = NSButton.alloc().initWithFrame_(((430, 58), (50, 24)))
+            alt_default_switch.setButtonType_(3)
+            alt_default_switch.setTitle_("")
+            alt_default_switch.setState_(1 if self.use_alternative_default else 0)
+        group1.addSubview_(alt_default_switch)
+        self._settings_fields["use_alternative_default"] = alt_default_switch
 
         # Group 2: Cache & Monitoring (3 rows, 70px each, Total Height 210)
         group2 = self._create_settings_group(((40, 160), (500, 210)), container)
@@ -1524,17 +1587,17 @@ class MacOSGUIManager:
         """
         container = NSView.alloc().initWithFrame_(((0, 0), (580, 550)))
 
+        # Directories Group (4 rows, Total Height 280)
+        group = self._create_settings_group(((40, 180), (520, 280)), container)
+
         title = self._create_section_title("Directories", (40, 480))
         container.addSubview_(title)
 
-        # Directories Group (2 rows, Total Height 120)
-        group = self._create_settings_group(((40, 340), (500, 120)), container)
-
-        # Series Directory (Base: 60)
-        series_label = self._create_modern_label("Series Directory", (20, 60 + 20))
+        # Series Directory (Base: 190)
+        series_label = self._create_modern_label("Series Directory", (20, 190 + 20))
         group.addSubview_(series_label)
 
-        series_field = NSTextField.alloc().initWithFrame_(((180, 60 + 18), (300, 24)))
+        series_field = NSTextField.alloc().initWithFrame_(((220, 190 + 18), (280, 24)))
         series_field.setStringValue_(self.api_client.series_directory)
         series_field.setBezelStyle_(1)
         series_field.setEditable_(True)
@@ -1542,19 +1605,51 @@ class MacOSGUIManager:
         group.addSubview_(series_field)
         self._settings_fields["series_dir"] = series_field
 
-        self._add_divider(group, 60)
+        self._add_divider(group, 190)
 
-        # Movies Directory (Base: 0)
-        movies_label = self._create_modern_label("Movies Directory", (20, 0 + 20))
+        # Alternative Series Directory (Base: 130)
+        alt_series_label = self._create_modern_label(
+            "Alternative Series Directory", (20, 130 + 20)
+        )
+        group.addSubview_(alt_series_label)
+
+        alt_series_field = NSTextField.alloc().initWithFrame_(((220, 130 + 18), (280, 24)))
+        alt_series_field.setStringValue_(self.api_client.alt_series_directory)
+        alt_series_field.setBezelStyle_(1)
+        alt_series_field.setEditable_(True)
+        alt_series_field.setSelectable_(True)
+        group.addSubview_(alt_series_field)
+        self._settings_fields["alt_series_dir"] = alt_series_field
+
+        self._add_divider(group, 130)
+
+        # Movies Directory (Base: 70)
+        movies_label = self._create_modern_label("Movies Directory", (20, 70 + 20))
         group.addSubview_(movies_label)
 
-        movies_field = NSTextField.alloc().initWithFrame_(((180, 0 + 18), (300, 24)))
+        movies_field = NSTextField.alloc().initWithFrame_(((220, 70 + 18), (280, 24)))
         movies_field.setStringValue_(self.api_client.movies_directory)
         movies_field.setBezelStyle_(1)
         movies_field.setEditable_(True)
         movies_field.setSelectable_(True)
         group.addSubview_(movies_field)
         self._settings_fields["movies_dir"] = movies_field
+
+        self._add_divider(group, 70)
+
+        # Alternative Movies Directory (Base: 10)
+        alt_movies_label = self._create_modern_label(
+            "Alternative Movies Directory", (20, 10 + 20)
+        )
+        group.addSubview_(alt_movies_label)
+
+        alt_movies_field = NSTextField.alloc().initWithFrame_(((220, 10 + 18), (280, 24)))
+        alt_movies_field.setStringValue_(self.api_client.alt_movies_directory)
+        alt_movies_field.setBezelStyle_(1)
+        alt_movies_field.setEditable_(True)
+        alt_movies_field.setSelectable_(True)
+        group.addSubview_(alt_movies_field)
+        self._settings_fields["alt_movies_dir"] = alt_movies_field
 
         self._content_view.addSubview_(container)
 
@@ -1934,6 +2029,7 @@ class MacOSGUIManager:
             None
         """
         try:
+            validate_qbittorrent_settings = False
             # Save auto-launch setting
             if "auto_launch" in self._settings_fields:
                 auto_launch_checked = self._settings_fields["auto_launch"].state() == 1
@@ -1981,6 +2077,7 @@ class MacOSGUIManager:
                     return
                 self.cache_manager.save_setting("qbittorrent_url", new_url)
                 self.api_client.qbittorrent_url = new_url
+                validate_qbittorrent_settings = True
                 logger.debug("qBittorrent URL updated: %s", new_url)
 
             # Save qBittorrent credentials if provided
@@ -1995,6 +2092,7 @@ class MacOSGUIManager:
                 if username and password:
                     try:
                         self.cache_manager.save_credentials(username, password)
+                        validate_qbittorrent_settings = True
                         self._show_notification(
                             "Credentials Updated",
                             "qBittorrent credentials have been saved.",
@@ -2015,6 +2113,12 @@ class MacOSGUIManager:
                 self.api_client.series_directory = new_series
                 logger.debug("Series directory updated: %s", new_series)
 
+            if "alt_series_dir" in self._settings_fields:
+                new_alt_series = self._settings_fields["alt_series_dir"].stringValue()
+                self.cache_manager.save_setting("alt_series_directory", new_alt_series)
+                self.api_client.alt_series_directory = new_alt_series
+                logger.debug("Alternative series directory updated: %s", new_alt_series)
+
             if "movies_dir" in self._settings_fields:
                 new_movies = self._settings_fields["movies_dir"].stringValue()
                 if not new_movies:
@@ -2023,6 +2127,26 @@ class MacOSGUIManager:
                 self.cache_manager.save_setting("movies_directory", new_movies)
                 self.api_client.movies_directory = new_movies
                 logger.debug("Movies directory updated: %s", new_movies)
+
+            if "alt_movies_dir" in self._settings_fields:
+                new_alt_movies = self._settings_fields["alt_movies_dir"].stringValue()
+                self.cache_manager.save_setting("alt_movies_directory", new_alt_movies)
+                self.api_client.alt_movies_directory = new_alt_movies
+                logger.debug("Alternative movies directory updated: %s", new_alt_movies)
+
+            if "use_alternative_default" in self._settings_fields:
+                use_alt_default_checked = (
+                    self._settings_fields["use_alternative_default"].state() == 1
+                )
+                if use_alt_default_checked != self.use_alternative_default:
+                    self.use_alternative_default = use_alt_default_checked
+                    self.cache_manager.save_setting(
+                        "use_alternative_default", use_alt_default_checked
+                    )
+                    logger.debug(
+                        "Use alternative directories by default updated: %s",
+                        use_alt_default_checked,
+                    )
 
             # Save Dynamic Sites
             if self._current_settings_section == "Sites":
@@ -2078,6 +2202,10 @@ class MacOSGUIManager:
                     self.handle_error(
                         "Cache duration must be a valid number (e.g., 30)"
                     )
+                    return
+
+            if validate_qbittorrent_settings:
+                if not self._validate_qbittorrent_settings():
                     return
 
             self._show_notification(
