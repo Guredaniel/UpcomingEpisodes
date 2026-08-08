@@ -247,6 +247,9 @@ class MacOSGUIManager:
         self.use_alternative_default: bool = self.cache_manager.load_setting(
             "use_alternative_default", False
         )
+        self.alternative_directories_enabled: bool = self.cache_manager.load_setting(
+            "alternative_directories_enabled", True
+        )
         self.auto_launch_enabled: bool = self.cache_manager.load_setting(
             "auto_launch_enabled", False
         )
@@ -791,7 +794,10 @@ class MacOSGUIManager:
             alt_checkbox = NSButton.alloc().initWithFrame_(((0, 0), (300, 18)))
             alt_checkbox.setButtonType_(3)  # NSSwitchButton
             alt_checkbox.setTitle_("Use alternative directory")
-            alt_checkbox.setState_(1 if self.use_alternative_default else 0)
+            alt_checkbox.setEnabled_(self.alternative_directories_enabled)
+            alt_checkbox.setState_(
+                1 if self.alternative_directories_enabled and self.use_alternative_default else 0
+            )
             accessory_view.addSubview_(alt_checkbox)
 
             alert.setAccessoryView_(accessory_view)
@@ -840,7 +846,9 @@ class MacOSGUIManager:
                 self.indefinite_selection = False
 
             is_series = selection == "Series"
-            use_alternative = alt_checkbox.state() == 1
+            use_alternative = (
+                self.alternative_directories_enabled and alt_checkbox.state() == 1
+            )
             self._send_magnet(magnet_url, is_series, use_alternative)
 
         except Exception as e:
@@ -1484,10 +1492,9 @@ class MacOSGUIManager:
         container = NSView.alloc().initWithFrame_(((0, 0), (580, 550)))
 
         title = self._create_section_title("General", (40, 480))
-        container.addSubview_(title)
 
-        # Group 1: Auto Launch and Alternative Directory Default
-        group1 = self._create_settings_group(((40, 380), (500, 100)), container)
+        # Group 1: Auto Launch and Alternative Directory Settings
+        group1 = self._create_settings_group(((40, 310), (500, 140)), container)
 
         autolaunch_label = self._create_modern_label("Auto-Launch on Login", (20, 20))
         group1.addSubview_(autolaunch_label)
@@ -1503,25 +1510,46 @@ class MacOSGUIManager:
         group1.addSubview_(autolaunch_switch)
         self._settings_fields["auto_launch"] = autolaunch_switch
 
+        # Enable alternative directories setting
+        alt_enabled_label = self._create_modern_label(
+            "Enable alternative directories", (20, 60)
+        )
+        group1.addSubview_(alt_enabled_label)
+
+        if HAS_NSSWITCH:
+            alt_enabled_switch = NSSwitch.alloc().initWithFrame_(((430, 58), (50, 24)))
+            alt_enabled_switch.setState_(1 if self.alternative_directories_enabled else 0)
+        else:
+            alt_enabled_switch = NSButton.alloc().initWithFrame_(((430, 58), (50, 24)))
+            alt_enabled_switch.setButtonType_(3)
+            alt_enabled_switch.setTitle_("")
+            alt_enabled_switch.setState_(1 if self.alternative_directories_enabled else 0)
+        group1.addSubview_(alt_enabled_switch)
+        self._settings_fields["alternative_directories_enabled"] = alt_enabled_switch
+
         # Use alternative directories by default setting
         alt_default_label = self._create_modern_label(
-            "Use alternative directories by default", (20, 60)
+            "Use alternative directories by default", (20, 100)
         )
         group1.addSubview_(alt_default_label)
 
         if HAS_NSSWITCH:
-            alt_default_switch = NSSwitch.alloc().initWithFrame_(((430, 58), (50, 24)))
+            alt_default_switch = NSSwitch.alloc().initWithFrame_(((430, 98), (50, 24)))
             alt_default_switch.setState_(1 if self.use_alternative_default else 0)
+            alt_default_switch.setEnabled_(self.alternative_directories_enabled)
         else:
-            alt_default_switch = NSButton.alloc().initWithFrame_(((430, 58), (50, 24)))
+            alt_default_switch = NSButton.alloc().initWithFrame_(((430, 98), (50, 24)))
             alt_default_switch.setButtonType_(3)
             alt_default_switch.setTitle_("")
             alt_default_switch.setState_(1 if self.use_alternative_default else 0)
+            alt_default_switch.setEnabled_(self.alternative_directories_enabled)
         group1.addSubview_(alt_default_switch)
         self._settings_fields["use_alternative_default"] = alt_default_switch
 
+        container.addSubview_(title)
+
         # Group 2: Cache & Monitoring (3 rows, 70px each, Total Height 210)
-        group2 = self._create_settings_group(((40, 160), (500, 210)), container)
+        group2 = self._create_settings_group(((40, 90), (500, 210)), container)
 
         # Row 1: Cache selection duration (Base: 140)
         cache_label = self._create_modern_label(
@@ -2133,6 +2161,34 @@ class MacOSGUIManager:
                 self.cache_manager.save_setting("alt_movies_directory", new_alt_movies)
                 self.api_client.alt_movies_directory = new_alt_movies
                 logger.debug("Alternative movies directory updated: %s", new_alt_movies)
+
+            if "alternative_directories_enabled" in self._settings_fields:
+                alternative_directories_enabled = (
+                    self._settings_fields["alternative_directories_enabled"].state() == 1
+                )
+                self.api_client.alternative_directories_enabled = (
+                    alternative_directories_enabled
+                )
+                if alternative_directories_enabled != self.alternative_directories_enabled:
+                    self.alternative_directories_enabled = alternative_directories_enabled
+                    self.cache_manager.save_setting(
+                        "alternative_directories_enabled",
+                        alternative_directories_enabled,
+                    )
+                    logger.debug(
+                        "Alternative directories enabled updated: %s",
+                        alternative_directories_enabled,
+                    )
+
+                    if not alternative_directories_enabled:
+                        self.use_alternative_default = False
+                        self.cache_manager.save_setting(
+                            "use_alternative_default", False
+                        )
+                        self._settings_fields["use_alternative_default"].setState_(0)
+                        self._settings_fields["use_alternative_default"].setEnabled_(False)
+                    else:
+                        self._settings_fields["use_alternative_default"].setEnabled_(True)
 
             if "use_alternative_default" in self._settings_fields:
                 use_alt_default_checked = (

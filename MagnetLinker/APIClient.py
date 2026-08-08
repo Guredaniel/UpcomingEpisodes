@@ -37,6 +37,9 @@ class APIClient:
         self.alt_movies_directory = self.cache_manager.load_setting(
             "alt_movies_directory", ""
         )
+        self.alternative_directories_enabled = self.cache_manager.load_setting(
+            "alternative_directories_enabled", True
+        )
 
     def _qbittorrent_api_url(self, endpoint: str, base_url: str | None = None) -> str:
         """Construct a qBittorrent API URL from the configured base URL.
@@ -104,13 +107,21 @@ class APIClient:
             if is_series:
                 save_path = (
                     self.alt_series_directory
-                    if use_alternative and self.alt_series_directory
+                    if (
+                        self.alternative_directories_enabled
+                        and use_alternative
+                        and self.alt_series_directory
+                    )
                     else self.series_directory
                 )
             else:
                 save_path = (
                     self.alt_movies_directory
-                    if use_alternative and self.alt_movies_directory
+                    if (
+                        self.alternative_directories_enabled
+                        and use_alternative
+                        and self.alt_movies_directory
+                    )
                     else self.movies_directory
                 )
             
@@ -176,13 +187,21 @@ class APIClient:
             if is_series:
                 save_path = (
                     self.alt_series_directory
-                    if use_alternative and self.alt_series_directory
+                    if (
+                        self.alternative_directories_enabled
+                        and use_alternative
+                        and self.alt_series_directory
+                    )
                     else self.series_directory
                 )
             else:
                 save_path = (
                     self.alt_movies_directory
-                    if use_alternative and self.alt_movies_directory
+                    if (
+                        self.alternative_directories_enabled
+                        and use_alternative
+                        and self.alt_movies_directory
+                    )
                     else self.movies_directory
                 )
             
