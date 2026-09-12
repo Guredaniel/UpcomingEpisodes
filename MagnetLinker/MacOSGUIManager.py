@@ -217,6 +217,15 @@ class SettingsActionHandler(NSObject):
         if hasattr(self.manager, "_settings_clear_credentials_"):
             self.manager._settings_clear_credentials_(sender)
 
+    def toggleAlternativeDirectoriesClicked_(self, sender: Any) -> None:
+        """Handle toggle to show/hide alternative directories.
+
+        Args:
+            sender: The toggle switch or button that was clicked.
+        """
+        if hasattr(self.manager, "_toggle_show_alternative_directories"):
+            self.manager._toggle_show_alternative_directories(sender)
+
 
 
 class MacOSGUIManager:
@@ -249,6 +258,9 @@ class MacOSGUIManager:
         )
         self.alternative_directories_enabled: bool = self.cache_manager.load_setting(
             "alternative_directories_enabled", True
+        )
+        self.show_alternative_directories: bool = self.cache_manager.load_setting(
+            "show_alternative_directories", self.alternative_directories_enabled
         )
         self.auto_launch_enabled: bool = self.cache_manager.load_setting(
             "auto_launch_enabled", False
@@ -784,21 +796,30 @@ class MacOSGUIManager:
             alert.addButtonWithTitle_("Series")
 
             # Add checkbox for remember selection
-            accessory_view = NSView.alloc().initWithFrame_(((0, 0), (300, 42)))
-            remember_checkbox = NSButton.alloc().initWithFrame_(((0, 18), (300, 18)))
-            remember_checkbox.setButtonType_(3)  # NSSwitchButton
-            remember_checkbox.setTitle_("Remember this selection")
-            remember_checkbox.setState_(0)
-            accessory_view.addSubview_(remember_checkbox)
+            if self.show_alternative_directories:
+                accessory_view = NSView.alloc().initWithFrame_(((0, 0), (300, 42)))
+                remember_checkbox = NSButton.alloc().initWithFrame_(((0, 18), (300, 18)))
+                remember_checkbox.setButtonType_(3)  # NSSwitchButton
+                remember_checkbox.setTitle_("Remember this selection")
+                remember_checkbox.setState_(0)
+                accessory_view.addSubview_(remember_checkbox)
 
-            alt_checkbox = NSButton.alloc().initWithFrame_(((0, 0), (300, 18)))
-            alt_checkbox.setButtonType_(3)  # NSSwitchButton
-            alt_checkbox.setTitle_("Use alternative directory")
-            alt_checkbox.setEnabled_(self.alternative_directories_enabled)
-            alt_checkbox.setState_(
-                1 if self.alternative_directories_enabled and self.use_alternative_default else 0
-            )
-            accessory_view.addSubview_(alt_checkbox)
+                alt_checkbox = NSButton.alloc().initWithFrame_(((0, 0), (300, 18)))
+                alt_checkbox.setButtonType_(3)  # NSSwitchButton
+                alt_checkbox.setTitle_("Use alternative directory")
+                alt_checkbox.setEnabled_(self.alternative_directories_enabled)
+                alt_checkbox.setState_(
+                    1 if self.alternative_directories_enabled and self.use_alternative_default else 0
+                )
+                accessory_view.addSubview_(alt_checkbox)
+            else:
+                accessory_view = NSView.alloc().initWithFrame_(((0, 0), (300, 20)))
+                remember_checkbox = NSButton.alloc().initWithFrame_(((0, 0), (300, 18)))
+                remember_checkbox.setButtonType_(3)  # NSSwitchButton
+                remember_checkbox.setTitle_("Remember this selection")
+                remember_checkbox.setState_(0)
+                accessory_view.addSubview_(remember_checkbox)
+                alt_checkbox = None
 
             alert.setAccessoryView_(accessory_view)
 
@@ -847,7 +868,10 @@ class MacOSGUIManager:
 
             is_series = selection == "Series"
             use_alternative = (
-                self.alternative_directories_enabled and alt_checkbox.state() == 1
+                self.show_alternative_directories
+                and self.alternative_directories_enabled
+                and alt_checkbox is not None
+                and alt_checkbox.state() == 1
             )
             self._send_magnet(magnet_url, is_series, use_alternative)
 
@@ -1607,6 +1631,30 @@ class MacOSGUIManager:
 
         self._content_view.addSubview_(container)
 
+    def _toggle_show_alternative_directories(self, sender: Any) -> None:
+        """Toggle the visibility of alternative directory fields in the Directories section.
+
+        Args:
+            sender: The toggle control that triggered this action.
+        """
+        new_state = sender.state() == 1 if hasattr(sender, "state") else bool(sender)
+        self.show_alternative_directories = new_state
+        self.cache_manager.save_setting("show_alternative_directories", new_state)
+
+        # Preserve in-progress edits from current fields before re-rendering
+        if "series_dir" in self._settings_fields and hasattr(self._settings_fields["series_dir"], "stringValue"):
+            self.api_client.series_directory = self._settings_fields["series_dir"].stringValue()
+        if "movies_dir" in self._settings_fields and hasattr(self._settings_fields["movies_dir"], "stringValue"):
+            self.api_client.movies_directory = self._settings_fields["movies_dir"].stringValue()
+        if "alt_series_dir" in self._settings_fields and hasattr(self._settings_fields["alt_series_dir"], "stringValue"):
+            self.api_client.alt_series_directory = self._settings_fields["alt_series_dir"].stringValue()
+        if "alt_movies_dir" in self._settings_fields and hasattr(self._settings_fields["alt_movies_dir"], "stringValue"):
+            self.api_client.alt_movies_directory = self._settings_fields["alt_movies_dir"].stringValue()
+
+        logger.debug("Show alternative directories toggled: %s", new_state)
+        if hasattr(self, "_content_view") and self._content_view is not None:
+            self._show_settings_section("Directories")
+
     def _create_directories_content(self) -> None:
         """Create Directories settings content using modern Card UI.
 
@@ -1615,71 +1663,130 @@ class MacOSGUIManager:
         """
         container = NSView.alloc().initWithFrame_(((0, 0), (580, 550)))
 
-        # Directories Group (4 rows, Total Height 280)
-        group = self._create_settings_group(((40, 180), (520, 280)), container)
-
         title = self._create_section_title("Directories", (40, 480))
         container.addSubview_(title)
 
-        # Series Directory (Base: 190)
-        series_label = self._create_modern_label("Series Directory", (20, 190 + 20))
-        group.addSubview_(series_label)
+        # Group 1: Options (Show/Hide Alternative Directories, Height: 56)
+        options_group = self._create_settings_group(((40, 410), (520, 56)), container)
 
-        series_field = NSTextField.alloc().initWithFrame_(((220, 190 + 18), (280, 24)))
-        series_field.setStringValue_(self.api_client.series_directory)
-        series_field.setBezelStyle_(1)
-        series_field.setEditable_(True)
-        series_field.setSelectable_(True)
-        group.addSubview_(series_field)
-        self._settings_fields["series_dir"] = series_field
-
-        self._add_divider(group, 190)
-
-        # Alternative Series Directory (Base: 130)
-        alt_series_label = self._create_modern_label(
-            "Alternative Series Directory", (20, 130 + 20)
+        show_alt_label = self._create_modern_label(
+            "Show Alternative Directories", (20, 16)
         )
-        group.addSubview_(alt_series_label)
+        options_group.addSubview_(show_alt_label)
 
-        alt_series_field = NSTextField.alloc().initWithFrame_(((220, 130 + 18), (280, 24)))
-        alt_series_field.setStringValue_(self.api_client.alt_series_directory)
-        alt_series_field.setBezelStyle_(1)
-        alt_series_field.setEditable_(True)
-        alt_series_field.setSelectable_(True)
-        group.addSubview_(alt_series_field)
-        self._settings_fields["alt_series_dir"] = alt_series_field
+        if HAS_NSSWITCH:
+            show_alt_switch = NSSwitch.alloc().initWithFrame_(((450, 15), (50, 24)))
+            show_alt_switch.setState_(1 if self.show_alternative_directories else 0)
+        else:
+            show_alt_switch = NSButton.alloc().initWithFrame_(((450, 15), (50, 24)))
+            show_alt_switch.setButtonType_(3)
+            show_alt_switch.setTitle_("")
+            show_alt_switch.setState_(1 if self.show_alternative_directories else 0)
 
-        self._add_divider(group, 130)
+        if hasattr(self, "_action_handler"):
+            show_alt_switch.setTarget_(self._action_handler)
+            show_alt_switch.setAction_("toggleAlternativeDirectoriesClicked:")
+        options_group.addSubview_(show_alt_switch)
+        self._settings_fields["show_alt_directories"] = show_alt_switch
 
-        # Movies Directory (Base: 70)
-        movies_label = self._create_modern_label("Movies Directory", (20, 70 + 20))
-        group.addSubview_(movies_label)
+        # Group 2: Directories Card
+        if self.show_alternative_directories:
+            # 4 rows, Total Height: 260, y from 120 to 380
+            group = self._create_settings_group(((40, 120), (520, 260)), container)
 
-        movies_field = NSTextField.alloc().initWithFrame_(((220, 70 + 18), (280, 24)))
-        movies_field.setStringValue_(self.api_client.movies_directory)
-        movies_field.setBezelStyle_(1)
-        movies_field.setEditable_(True)
-        movies_field.setSelectable_(True)
-        group.addSubview_(movies_field)
-        self._settings_fields["movies_dir"] = movies_field
+            # Series Directory (Base: 195)
+            series_label = self._create_modern_label("Series Directory", (20, 195 + 16))
+            group.addSubview_(series_label)
 
-        self._add_divider(group, 70)
+            series_field = NSTextField.alloc().initWithFrame_(((220, 195 + 14), (280, 24)))
+            series_field.setStringValue_(self.api_client.series_directory)
+            series_field.setBezelStyle_(1)
+            series_field.setEditable_(True)
+            series_field.setSelectable_(True)
+            group.addSubview_(series_field)
+            self._settings_fields["series_dir"] = series_field
 
-        # Alternative Movies Directory (Base: 10)
-        alt_movies_label = self._create_modern_label(
-            "Alternative Movies Directory", (20, 10 + 20)
-        )
-        group.addSubview_(alt_movies_label)
+            self._add_divider(group, 195)
 
-        alt_movies_field = NSTextField.alloc().initWithFrame_(((220, 10 + 18), (280, 24)))
-        alt_movies_field.setStringValue_(self.api_client.alt_movies_directory)
-        alt_movies_field.setBezelStyle_(1)
-        alt_movies_field.setEditable_(True)
-        alt_movies_field.setSelectable_(True)
-        group.addSubview_(alt_movies_field)
-        self._settings_fields["alt_movies_dir"] = alt_movies_field
+            # Alternative Series Directory (Base: 130)
+            alt_series_label = self._create_modern_label(
+                "Alternative Series Directory", (20, 130 + 16)
+            )
+            group.addSubview_(alt_series_label)
 
-        self._content_view.addSubview_(container)
+            alt_series_field = NSTextField.alloc().initWithFrame_(((220, 130 + 14), (280, 24)))
+            alt_series_field.setStringValue_(self.api_client.alt_series_directory)
+            alt_series_field.setBezelStyle_(1)
+            alt_series_field.setEditable_(True)
+            alt_series_field.setSelectable_(True)
+            group.addSubview_(alt_series_field)
+            self._settings_fields["alt_series_dir"] = alt_series_field
+
+            self._add_divider(group, 130)
+
+            # Movies Directory (Base: 65)
+            movies_label = self._create_modern_label("Movies Directory", (20, 65 + 16))
+            group.addSubview_(movies_label)
+
+            movies_field = NSTextField.alloc().initWithFrame_(((220, 65 + 14), (280, 24)))
+            movies_field.setStringValue_(self.api_client.movies_directory)
+            movies_field.setBezelStyle_(1)
+            movies_field.setEditable_(True)
+            movies_field.setSelectable_(True)
+            group.addSubview_(movies_field)
+            self._settings_fields["movies_dir"] = movies_field
+
+            self._add_divider(group, 65)
+
+            # Alternative Movies Directory (Base: 0)
+            alt_movies_label = self._create_modern_label(
+                "Alternative Movies Directory", (20, 0 + 16)
+            )
+            group.addSubview_(alt_movies_label)
+
+            alt_movies_field = NSTextField.alloc().initWithFrame_(((220, 0 + 14), (280, 24)))
+            alt_movies_field.setStringValue_(self.api_client.alt_movies_directory)
+            alt_movies_field.setBezelStyle_(1)
+            alt_movies_field.setEditable_(True)
+            alt_movies_field.setSelectable_(True)
+            group.addSubview_(alt_movies_field)
+            self._settings_fields["alt_movies_dir"] = alt_movies_field
+        else:
+            # Remove alternate directory fields from fields dict when hidden
+            self._settings_fields.pop("alt_series_dir", None)
+            self._settings_fields.pop("alt_movies_dir", None)
+
+            # 2 rows, Total Height: 130, y from 250 to 380
+            group = self._create_settings_group(((40, 250), (520, 130)), container)
+
+            # Series Directory (Base: 65)
+            series_label = self._create_modern_label("Series Directory", (20, 65 + 16))
+            group.addSubview_(series_label)
+
+            series_field = NSTextField.alloc().initWithFrame_(((220, 65 + 14), (280, 24)))
+            series_field.setStringValue_(self.api_client.series_directory)
+            series_field.setBezelStyle_(1)
+            series_field.setEditable_(True)
+            series_field.setSelectable_(True)
+            group.addSubview_(series_field)
+            self._settings_fields["series_dir"] = series_field
+
+            self._add_divider(group, 65)
+
+            # Movies Directory (Base: 0)
+            movies_label = self._create_modern_label("Movies Directory", (20, 0 + 16))
+            group.addSubview_(movies_label)
+
+            movies_field = NSTextField.alloc().initWithFrame_(((220, 0 + 14), (280, 24)))
+            movies_field.setStringValue_(self.api_client.movies_directory)
+            movies_field.setBezelStyle_(1)
+            movies_field.setEditable_(True)
+            movies_field.setSelectable_(True)
+            group.addSubview_(movies_field)
+            self._settings_fields["movies_dir"] = movies_field
+
+        if hasattr(self, "_content_view") and self._content_view is not None:
+            self._content_view.addSubview_(container)
 
     def _create_qbittorrent_content(self) -> None:
         """Create qBittorrent settings content using modern Card UI.
@@ -2161,6 +2268,23 @@ class MacOSGUIManager:
                 self.cache_manager.save_setting("alt_movies_directory", new_alt_movies)
                 self.api_client.alt_movies_directory = new_alt_movies
                 logger.debug("Alternative movies directory updated: %s", new_alt_movies)
+
+            if "show_alt_directories" in self._settings_fields:
+                show_alt = (
+                    self._settings_fields["show_alt_directories"].state() == 1
+                    if hasattr(self._settings_fields["show_alt_directories"], "state")
+                    else bool(self._settings_fields["show_alt_directories"])
+                )
+                if show_alt != self.show_alternative_directories:
+                    self.show_alternative_directories = show_alt
+                    self.cache_manager.save_setting(
+                        "show_alternative_directories",
+                        show_alt,
+                    )
+                    logger.debug(
+                        "Show alternative directories updated: %s",
+                        show_alt,
+                    )
 
             if "alternative_directories_enabled" in self._settings_fields:
                 alternative_directories_enabled = (

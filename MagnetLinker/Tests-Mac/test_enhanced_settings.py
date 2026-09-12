@@ -3,6 +3,8 @@
 Test the enhanced macOS settings interface with visual improvements.
 """
 
+from unittest.mock import Mock
+
 from MacOSGUIManager import MacOSGUIManager
 from CacheManager import CacheManager
 from APIClient import APIClient
@@ -149,6 +151,104 @@ def test_saving_enabled_alternative_directories_syncs_api_client(monkeypatch, tm
     assert alt_default_field.enabled is True
 
 
+def test_show_alternative_directories_toggle_support():
+    """Ensure the macOS settings manager tracks show_alternative_directories."""
+    cache = CacheManager()
+    api = APIClient(cache)
+    gui = MacOSGUIManager(cache, api)
+
+    assert hasattr(gui, "show_alternative_directories")
+    assert isinstance(gui.show_alternative_directories, bool)
+
+
+def test_directories_content_toggles_alternative_fields():
+    """Test that alternative directory fields are hidden when show_alternative_directories is False."""
+    cache = CacheManager()
+    api = APIClient(cache)
+    gui = MacOSGUIManager(cache, api)
+    gui._content_view = Mock()
+
+    # When show_alternative_directories is True
+    gui.show_alternative_directories = True
+    gui._create_directories_content()
+    assert "show_alt_directories" in gui._settings_fields
+    assert "series_dir" in gui._settings_fields
+    assert "movies_dir" in gui._settings_fields
+    assert "alt_series_dir" in gui._settings_fields
+    assert "alt_movies_dir" in gui._settings_fields
+
+    # When show_alternative_directories is False
+    gui.show_alternative_directories = False
+    gui._create_directories_content()
+    assert "show_alt_directories" in gui._settings_fields
+    assert "series_dir" in gui._settings_fields
+    assert "movies_dir" in gui._settings_fields
+    assert "alt_series_dir" not in gui._settings_fields
+    assert "alt_movies_dir" not in gui._settings_fields
+
+
+def test_toggle_show_alternative_directories_callback(monkeypatch, tmp_path):
+    """Test that toggling show_alternative_directories updates state, cache, and re-renders."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    cache = CacheManager()
+    api = APIClient(cache)
+    gui = MacOSGUIManager(cache, api)
+    gui._content_view = Mock()
+    gui._content_view.subviews.return_value = []
+    gui._sidebar_buttons = {}
+
+    toggle_field = FakeToggleField(0)
+    gui._toggle_show_alternative_directories(toggle_field)
+
+    assert gui.show_alternative_directories is False
+    assert cache.load_setting("show_alternative_directories", None) is False
+    assert "alt_series_dir" not in gui._settings_fields
+    assert "alt_movies_dir" not in gui._settings_fields
+
+    toggle_field.setState_(1)
+    gui._toggle_show_alternative_directories(toggle_field)
+
+    assert gui.show_alternative_directories is True
+    assert cache.load_setting("show_alternative_directories", None) is True
+    assert "alt_series_dir" in gui._settings_fields
+    assert "alt_movies_dir" in gui._settings_fields
+
+
+def test_saving_show_alternative_directories(monkeypatch, tmp_path):
+    """Test saving show_alternative_directories via _save_all_settings."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    cache = CacheManager()
+    api = APIClient(cache)
+    gui = MacOSGUIManager(cache, api)
+
+    gui.show_alternative_directories = True
+    show_alt_field = FakeToggleField(0)
+    gui._settings_fields = {
+        "show_alt_directories": show_alt_field,
+    }
+    gui._working_sites = []
+    gui._working_server_sites = []
+    gui.app = type("App", (), {"menu": {}})()
+
+    gui._save_all_settings()
+
+    assert gui.show_alternative_directories is False
+    assert cache.load_setting("show_alternative_directories", None) is False
+
+
 if __name__ == "__main__":
     test_enhanced_settings()
     test_alternative_directories_toggle_support()
+    test_show_alternative_directories_toggle_support()
+    test_directories_content_toggles_alternative_fields()
+    test_toggle_show_alternative_directories_callback(
+        type("MonkeyPatch", (), {"setenv": lambda self, k, v: None})(),
+        CacheManager().get_cache_directory().parent,
+    )
+    test_saving_show_alternative_directories(
+        type("MonkeyPatch", (), {"setenv": lambda self, k, v: None})(),
+        CacheManager().get_cache_directory().parent,
+    )
+    print("✅ All show_alternative_directories tests passed successfully!")
