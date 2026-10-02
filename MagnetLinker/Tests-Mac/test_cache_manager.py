@@ -6,7 +6,6 @@ import unittest
 import os
 import json
 import tempfile
-import shutil
 from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
 
@@ -17,18 +16,24 @@ sys.path.insert(0, str(project_root))
 from CacheManager import CacheManager
 
 
-class TestCacheManagerKeyManagement(unittest.TestCase):
+class IsolatedCacheTestCase(unittest.TestCase):
+    """Run cache tests with an isolated home directory."""
+
+    def setUp(self):
+        self._temporary_home = tempfile.TemporaryDirectory()
+        home_patcher = patch.dict(os.environ, {"HOME": self._temporary_home.name})
+        home_patcher.start()
+        self.addCleanup(home_patcher.stop)
+        self.addCleanup(self._temporary_home.cleanup)
+
+
+class TestCacheManagerKeyManagement(IsolatedCacheTestCase):
     """Test encryption key generation and management."""
     
     def setUp(self):
         """Set up test fixtures."""
-        self.test_cache_dir = tempfile.mkdtemp()
-        
-    def tearDown(self):
-        """Clean up test fixtures."""
-        if os.path.exists(self.test_cache_dir):
-            shutil.rmtree(self.test_cache_dir)
-    
+        super().setUp()
+
     def test_key_generation(self):
         """Test that encryption key is generated."""
         cache_mgr = CacheManager()
@@ -61,11 +66,12 @@ class TestCacheManagerKeyManagement(unittest.TestCase):
         print("✓ Cache directory creation works")
 
 
-class TestCacheManagerCredentials(unittest.TestCase):
+class TestCacheManagerCredentials(IsolatedCacheTestCase):
     """Test credential encryption and storage."""
     
     def setUp(self):
         """Set up test fixtures."""
+        super().setUp()
         self.cache_mgr = CacheManager()
         # Clear any existing credentials
         self.cache_mgr.clear_credentials()
@@ -138,11 +144,12 @@ class TestCacheManagerCredentials(unittest.TestCase):
         print("✓ Loading nonexistent credentials returns None")
 
 
-class TestCacheManagerSettings(unittest.TestCase):
+class TestCacheManagerSettings(IsolatedCacheTestCase):
     """Test settings save and load functionality."""
     
     def setUp(self):
         """Set up test fixtures."""
+        super().setUp()
         self.cache_mgr = CacheManager()
         # Clear settings
         settings_path = os.path.join(
@@ -236,11 +243,12 @@ class TestCacheManagerSettings(unittest.TestCase):
         print("✓ Overwrite setting works")
 
 
-class TestCacheManagerSites(unittest.TestCase):
+class TestCacheManagerSites(IsolatedCacheTestCase):
     """Test saved sites management."""
     
     def setUp(self):
         """Set up test fixtures."""
+        super().setUp()
         self.cache_mgr = CacheManager()
         # Clear settings
         settings_path = os.path.join(
@@ -306,11 +314,12 @@ class TestCacheManagerSites(unittest.TestCase):
         print("✓ Save and load server sites works")
 
 
-class TestCacheManagerEdgeCases(unittest.TestCase):
+class TestCacheManagerEdgeCases(IsolatedCacheTestCase):
     """Test edge cases and error conditions."""
     
     def setUp(self):
         """Set up test fixtures."""
+        super().setUp()
         self.cache_mgr = CacheManager()
     
     def tearDown(self):
